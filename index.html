@@ -620,7 +620,7 @@ var _gtTimer = null;
 // ══ UTILS ══
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 function v(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
-function toast(msg, dur) {
+function showToast(msg, dur) {
   var t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
@@ -899,34 +899,64 @@ function getItemsData() {
 // ══ SUBMIT CARTON ══
 function submitCarton(doPrint) {
   var pl = getPL(selectedPLId);
-  if (!pl) { toast('⚠️ Select PL dulu!'); return; }
+  if (!pl) { showToast('⚠️ Select a PL first!'); return; }
   var boxNo = parseInt(v('f-boxno'));
-  if (!boxNo) { toast('⚠️ Enter Box No!'); return; }
-
-  // Check duplicate
-  if (pl.cartons.find(function(c){ return c.boxNo === boxNo; })) {
-    if (!confirm('Box ' + boxNo + ' done ada. Replace?')) return;
-    pl.cartons = pl.cartons.filter(function(c){ return c.boxNo !== boxNo; });
-  }
-
+  if (!boxNo) { showToast('⚠️ Enter Box No!'); return; }
   var items = getItemsData();
-  if (!items.length || !items[0].style) { toast('⚠️ Sila select Item Description!'); return; }
+  if (!items.length || !items[0].style) { showToast('⚠️ Select Item Description!'); return; }
   var tPcs = items.reduce(function(s, it){ return s + it.pcs; }, 0);
 
-  var carton = {
-    id: uid(), boxNo: boxNo, items: items,
-    totalPcs: tPcs,
-    weight: v('f-weight'),
-    measure: v('f-measure'),
-    ts: new Date().toISOString()
-  };
-  pl.cartons.push(carton);
-  pl.cartons.sort(function(a, b){ return a.boxNo - b.boxNo; });
-  save();
-  toast('✅ Box ' + String(boxNo).padStart(3, '0') + ' disave!');
-  if (doPrint) printLabel(pl, carton);
-  initForm(); // auto-increment & reset
-  updateFormHeader();
+  // Show saving indicator
+  showToast('Saving...');
+
+  // Fetch latest from Supabase first (fetch-then-merge)
+  function doSave(latestPls) {
+    // Merge latest into local pls
+    if (latestPls) {
+      pls = latestPls;
+      localStorage.setItem('export_pls', JSON.stringify(pls));
+    }
+    var freshPL = getPL(selectedPLId);
+    if (!freshPL) { showToast('PL not found!'); return; }
+
+    // Auto-resolve box number conflict
+    var takenNos = freshPL.cartons.map(function(c){ return c.boxNo; });
+    var assignedBox = boxNo;
+    if (takenNos.indexOf(assignedBox) !== -1) {
+      // Find next available number
+      while (takenNos.indexOf(assignedBox) !== -1) { assignedBox++; }
+      showToast('Box ' + String(boxNo).padStart(3,'0') + ' taken → assigned BOX ' + String(assignedBox).padStart(3,'0'));
+    }
+
+    var carton = {
+      id: uid(), boxNo: assignedBox, items: items,
+      totalPcs: tPcs,
+      weight: v('f-weight'),
+      measure: v('f-measure'),
+      ts: new Date().toISOString()
+    };
+    freshPL.cartons.push(carton);
+    freshPL.cartons.sort(function(a,b){ return a.boxNo - b.boxNo; });
+    save();
+    if (takenNos.indexOf(boxNo) === -1) {
+      showToast('✅ BOX ' + String(assignedBox).padStart(3,'0') + ' saved!');
+    }
+    if (doPrint) printLabel(freshPL, carton);
+    initForm();
+    updateFormHeader();
+  }
+
+  if (SB_URL && SB_KEY) {
+    fetch(SB_URL + '/rest/v1/export_data?key=eq.main&select=value', { headers: sbHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(rows){
+        var data = rows && rows[0] && rows[0].value;
+        doSave(data && Array.isArray(data.pls) ? data.pls : null);
+      })
+      .catch(function(){ doSave(null); });
+  } else {
+    doSave(null);
+  }
 }
 
 // ══ CARTON LIST ══
@@ -1134,6 +1164,24 @@ window.onload = function() {
     showSetup();
   } else {
     showHome();
+  }
+
+  // Auto-refresh every 20 seconds
+  if (SB_URL && SB_KEY) {
+    setInterval(function() {
+      loadFromSupabase(function(ok) {
+        if (ok) {
+          // Silently refresh current view
+          var screen = document.querySelector('.screen.active');
+          if (screen) {
+            var id = screen.id;
+            if (id === 'screen-form') updateFormHeader();
+            if (id === 'screen-list') renderCartonList();
+            if (id === 'screen-home') updateHomeCards();
+          }
+        }
+      });
+    }, 20000);
   }
 };
 </script>
