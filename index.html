@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ms">
 <head>
@@ -50,16 +49,22 @@ function startVerifyScan() {
     .then(function(stream) {
       vscanStream = stream;
       video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
       video.setAttribute('playsinline', true);
-      video.play().catch(function(e){ showToast('Camera error: ' + e.message); stopVerifyScan(); });
+      video.setAttribute('webkit-playsinline', true);
       function waitAndScan(attempt) {
         attempt = attempt || 0; attempt++;
         if (!vscanStream) return;
         if (video.readyState >= 2 && video.videoWidth > 0) { vscanRAF = requestAnimationFrame(vscanTick); }
         else if (attempt < 60) { setTimeout(function(){ waitAndScan(attempt); }, 100); }
       }
-      video.onloadedmetadata = function() { waitAndScan(); };
-      setTimeout(function(){ waitAndScan(); }, 300);
+      video.onloadedmetadata = function() {
+        video.play().then(function(){ waitAndScan(); }).catch(function(){ waitAndScan(); });
+      };
+      var p = video.play();
+      if (p && p.catch) p.catch(function(){});
+      setTimeout(function(){ waitAndScan(); }, 500);
     })
     .catch(function(err) {
       document.getElementById('vscan-video-wrap').style.display = 'none';
