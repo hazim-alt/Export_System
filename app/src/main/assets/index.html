@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>📦 Export System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+// ════ LOADING VERIFY ════
+var vscanStream = null, vscanRAF = null, vscanMode = 'cam', vscanPLId = null;
+
+// showVerify defined below
+
+
+function setVerifyMode(mode) {
+  vscanMode = mode;
+  stopVerifyScan();
+  document.getElementById('vmode-cam').style.display = mode === 'cam' ? '' : 'none';
+  document.getElementById('vmode-scanner').style.display = mode === 'scanner' ? '' : 'none';
+  document.getElementById('vtab-cam').className = mode === 'cam' ? 'btn btn-primary' : 'btn btn-ghost';
+  document.getElementById('vtab-scanner').className = mode === 'scanner' ? 'btn btn-primary' : 'btn btn-ghost';
+  if (mode === 'scanner') setTimeout(function(){ var i = document.getElementById('vmanual-input'); if(i) i.focus(); }, 100);
+}
+
+function initVerifyPage() {
+  if (!vscanPLId && selectedPLId) vscanPLId = selectedPLId;
+  var pl = vscanPLId ? pls.find(function(p){ return p.id === vscanPLId; }) : null;
+  var nameEl = document.getElementById('verify-pl-name');
+  if (nameEl) nameEl.textContent = pl ? pl.name : '— Tiada PL dipilih —';
+  renderVerifyList();
+}
+
+function onVerifyPLChange() { renderVerifyList(); }
+
+function onVerifyPLChange() {
+  var sel = document.getElementById('verify-pl-select');
+  vscanPLId = sel ? sel.value : null;
+  renderVerifyList();
+}
+
+function startVerifyScan() {
+  if (typeof jsQR === 'undefined') { showToast('Library QR tidak load. Pastikan ada internet.'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('Browser tidak support kamera.'); return; }
+  var video = document.getElementById('vscan-video');
+  document.getElementById('vscan-video-wrap').style.display = '';
+  document.getElementById('vscan-start-btn').style.display = 'none';
+  document.getElementById('vscan-stop-btn').style.display = '';
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } })
+    .then(function(stream) {
+      vscanStream = stream;
+      video.srcObject = stream;
+      video.setAttribute('playsinline', true);
+      video.play().catch(function(){});
+      function waitAndScan(attempt) {
+        attempt = attempt || 0; attempt++;
+        if (!vscanStream) return;
+        if (video.readyState >= 2 && video.videoWidth > 0) { vscanRAF = requestAnimationFrame(vscanTick); }
+        else if (attempt < 60) { setTimeout(function(){ waitAndScan(attempt); }, 100); }
+      }
+      video.onloadedmetadata = function() { waitAndScan(); };
+      setTimeout(function(){ waitAndScan(); }, 300);
+    })
+    .catch(function(err) {
+      document.getElementById('vscan-video-wrap').style.display = 'none';
+      document.getElementById('vscan-start-btn').style.display = '';
+      document.getElementById('vscan-stop-btn').style.display = 'none';
+      var msg = err.name === 'NotAllowedError' ? 'Izin kamera ditolak.' : err.name === 'NotFoundError' ? 'Tiada kamera.' : 'Kamera error: ' + err.message;
+      showToast(msg);
+    });
+}
+
+function stopVerifyScan() {
+  if (vscanStream) { vscanStream.getTracks().forEach(function(t){ t.stop(); }); vscanStream = null; }
+  if (vscanRAF) { cancelAnimationFrame(vscanRAF); vscanRAF = null; }
+  var video = document.getElementById('vscan-video');
+  if (video) { video.srcObject = null; video.onloadedmetadata = null; }
+  var wrap = document.getElementById('vscan-video-wrap');
+  if (wrap) wrap.style.display = 'none';
+  var sb = document.getElementById('vscan-start-btn');
+  var st = document.getElementById('vscan-stop-btn');
+  if (sb) sb.style.display = '';
+  if (st) st.style.display = 'none';
+}
+
+function vscanTick() {
+  if (!vscanStream) return;
+  var video = document.getElementById('vscan-video');
+  var canvas = document.getElementById('vscan-canvas');
+  if (!video || !canvas) return;
+  if (video.readyState < 2 || video.videoWidth === 0) { vscanRAF = requestAnimationFrame(vscanTick); return; }
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  var ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  var img;
+  try { img = ctx.getImageData(0, 0, canvas.width, canvas.height); } catch(e) { vscanRAF = requestAnimationFrame(vscanTick); return; }
+  var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+  if (code && code.data) { stopVerifyScan(); processVerifyResult(code.data); return; }
+  vscanRAF = requestAnimationFrame(vscanTick);
+}
+
+function doManualVerify() {
+  var inp = document.getElementById('vmanual-input');
+  var val = inp ? inp.value.trim() : '';
+  if (!val) return;
+  if (inp) inp.value = '';
+  processVerifyResult(val);
+}
+
+function processVerifyResult(text) {
+  var parts = text.split(' | ');
+  var boxPart = parts[0] || '';
+  var plName  = parts[2] || '';
+  var boxNo   = parseInt(boxPart.replace('BOX:','').trim(), 10);
+  var foundPl = null, foundC = null;
+  pls.forEach(function(pl) {
+    if (pl.name === plName) {
+      pl.cartons.forEach(function(c) {
+        if (c.boxNo === boxNo) { foundPl = pl; foundC = c; }
+      });
+    }
+  });
+  if (!foundPl || !foundC) { showToast('Carton tidak dijumpai.'); if (vscanMode === 'cam') setTimeout(startVerifyScan, 1200); return; }
+  scannedMap[foundC.id] = Date.now();
+  saveScanned();
+  renderVerifyList();
+  showToast('✅ BOX ' + String(foundC.boxNo).padStart(3,'0') + ' — ' + (foundC.totalPcs||0) + ' PCS');
+  if (vscanMode === 'cam') setTimeout(startVerifyScan, 1200);
+}
+
+function saveScanned() {
+  localStorage.setItem('export_scanned', JSON.stringify(scannedMap));
+  syncToSupabase();
+}
+
+function renderVerifyList() {
+  var el = document.getElementById('verify-list-wrap');
+  if (!el) return;
+  var pl = vscanPLId ? pls.find(function(p){ return p.id === vscanPLId; }) : null;
+  if (!pl) { el.innerHTML = ''; return; }
+  var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
+  var scannedCount = sorted.filter(function(c){ return scannedMap[c.id]; }).length;
+  var total = sorted.length;
+  var pct = total > 0 ? Math.round(scannedCount/total*100) : 0;
+  var allDone = scannedCount === total && total > 0;
+  var html = '<div class="card">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+  html += '<div style="font-weight:800;color:var(--blue)">' + pl.name + '</div>';
+  html += '<div style="font-size:.82rem;font-weight:700;color:' + (allDone ? 'var(--green)' : '#888') + '">' + scannedCount + '/' + total + ' CTN' + (allDone ? ' ✅' : '') + '</div>';
+  html += '</div>';
+  html += '<div style="height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-bottom:14px">';
+  html += '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:99px;transition:width .3s"></div></div>';
+  if (sorted.length === 0) { html += '<p style="text-align:center;color:#aaa;padding:12px">Tiada karton.</p>'; }
+  else {
+    sorted.forEach(function(c) {
+      var done = !!scannedMap[c.id];
+      var boxStr = String(c.boxNo).padStart(3,'0');
+      var items = (c.items && c.items.length) ? c.items : [{ style: c.style||'', colour: c.colour||'', totalPcs: c.totalPcs||0 }];
+      var styleStr = Array.from(new Set(items.map(function(it){ return it.style||''; }))).filter(Boolean).join(' / ');
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1.5px solid ' + (done ? '#86efac' : '#e5e7eb') + ';background:' + (done ? '#f0fdf4' : '#fafafa') + ';margin-bottom:7px">';
+      html += '<span style="font-size:1.3rem">' + (done ? '✅' : '⬜') + '</span>';
+      html += '<div style="flex:1"><div style="font-weight:800;font-size:.88rem">BOX ' + boxStr + ' <span style="font-weight:400;color:#666;font-size:.82rem">' + styleStr + '</span></div>';
+      html += '<div style="font-size:.75rem;color:#888">' + (c.totalPcs||0) + ' PCS</div></div>';
+      if (done) html += '<button onclick="unscanVerify(\'' + c.id + '\')" style="border:none;background:none;color:#bbb;font-size:.8rem;cursor:pointer;padding:4px 8px">&#x2715;</button>';
+      html += '</div>';
+    });
+  }
+  html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset Semua Scan</button>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function unscanVerify(ctnId) { delete scannedMap[ctnId]; saveScanned(); renderVerifyList(); }
+function resetVerifyPL(plId) {
+  if (!confirm('Reset semua scan untuk PL ini?')) return;
+  var pl = pls.find(function(p){ return p.id === plId; });
+  if (!pl) return;
+  pl.cartons.forEach(function(c){ delete scannedMap[c.id]; });
+  saveScanned(); renderVerifyList();
+}
+
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f0f4f8;color:#1a2332;min-height:100vh}
+:root{
+  --blue:#1e3a5f;--blue-light:#2563eb;--green:#16a34a;--red:#dc2626;
+  --yellow:#f59e0b;--border:#dde3ee;--bg:#f0f4f8;--card:#fff;
+  --radius:14px;--shadow:0 2px 12px rgba(0,0,0,.08);
+}
+
+/* ── HEADER ── */
+.header{background:var(--blue);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.header-title{font-size:1.1rem;font-weight:800;letter-spacing:.3px}
+.header-sub{font-size:.72rem;opacity:.7;margin-top:1px}
+.btn-icon{background:rgba(255,255,255,.15);border:none;color:#fff;width:38px;height:38px;border-radius:50%;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.btn-icon:active{background:rgba(255,255,255,.3)}
+
+/* ── SCREEN MANAGEMENT ── */
+.screen{display:none;min-height:calc(100vh - 60px)}
+.screen.active{display:block}
+
+/* ── CARDS ── */
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin:12px;padding:16px}
+.card-title{font-size:.85rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+
+/* ── PL SELECT LIST ── */
+.pl-btn{display:block;width:100%;background:#fff;border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;text-align:left;cursor:pointer;transition:border-color .15s}
+.pl-btn:active{background:#f0f4f8}
+.pl-btn.selected{border-color:var(--blue-light);background:#eff6ff}
+.pl-btn-name{font-size:1rem;font-weight:800;color:var(--blue);margin-bottom:4px}
+.pl-btn-sub{font-size:.78rem;color:#64748b}
+.pl-btn-badge{display:inline-block;background:#e0f2fe;color:#0369a1;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin-top:6px}
+
+/* ── SETUP SCREEN ── */
+.setup-card{margin:20px 16px;background:#fff;border-radius:var(--radius);padding:24px;box-shadow:var(--shadow)}
+.setup-icon{font-size:3rem;text-align:center;margin-bottom:12px}
+.setup-title{font-size:1.1rem;font-weight:800;text-align:center;color:var(--blue);margin-bottom:6px}
+.setup-desc{font-size:.82rem;color:#64748b;text-align:center;margin-bottom:20px;line-height:1.5}
+.field-group{margin-bottom:14px}
+.field-lbl{font-size:.75rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.field-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;transition:border-color .15s}
+.field-inp:focus{border-color:var(--blue-light)}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity .15s}
+.btn:active{opacity:.75}
+.btn-primary{background:var(--blue);color:#fff;padding:15px 20px;font-size:1rem;width:100%;border-radius:12px}
+.btn-green{background:var(--green);color:#fff;padding:15px 20px;font-size:1rem;width:100%;border-radius:12px}
+.btn-red{background:var(--red);color:#fff;padding:8px 14px;font-size:.82rem;border-radius:8px}
+.btn-ghost{background:#f1f5f9;color:#334155;padding:12px 16px;font-size:.88rem;border-radius:10px}
+.btn-outline{background:#fff;color:var(--blue-light);border:2px solid var(--blue-light);padding:13px 20px;font-size:.95rem;width:100%;border-radius:12px}
+.btn-row{display:flex;gap:10px;margin-top:12px}
+.btn-row .btn{flex:1}
+
+/* ── FORM ── */
+.form-section{background:#fff;border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
+.form-label{font-size:.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;display:block}
+.form-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:1.1rem;font-weight:700;font-family:inherit;outline:none}
+.form-inp:focus{border-color:var(--blue-light)}
+.form-inp.big{font-size:1.6rem;text-align:center;padding:16px}
+.form-inp[readonly]{background:#f8faff;color:#64748b}
+
+/* ── SIZE GRID ── */
+.size-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0}
+.size-cell{display:flex;flex-direction:column;align-items:center;gap:3px}
+.size-lbl{font-size:.65rem;font-weight:800;color:var(--blue-light);text-transform:uppercase}
+.size-inp{width:100%;padding:10px 2px;border:1.5px solid var(--border);border-radius:8px;font-size:1rem;font-weight:700;text-align:center;outline:none;font-family:inherit}
+.size-inp:focus{border-color:var(--blue-light)}
+
+/* ── ITEM BLOCK ── */
+.item-block{background:#f8faff;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.item-block-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.item-num{font-size:.82rem;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.5px}
+.item-subtotal{font-size:.8rem;font-weight:700;color:var(--green);text-align:right;margin-top:8px}
+
+/* ── SELECT ── */
+.form-select{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-weight:700;font-family:inherit;outline:none;background:#fff;-webkit-appearance:none}
+.form-select:focus{border-color:var(--blue-light)}
+
+/* ── PROGRESS BAR ── */
+.prog-bg{background:#e2e8f0;border-radius:20px;height:6px;margin-top:6px;overflow:hidden}
+.prog-fill{background:var(--blue-light);height:100%;border-radius:20px;transition:width .3s}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(30px);background:#1e293b;color:#fff;padding:12px 22px;border-radius:30px;font-size:.88rem;font-weight:600;opacity:0;pointer-events:none;transition:all .3s;z-index:9999;white-space:nowrap;max-width:90vw}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── STATUS BAR ── */
+.status-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:rgba(255,255,255,.8);font-size:.75rem;font-weight:600}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.status-dot.green{background:var(--green)}
+.status-dot.red{background:var(--red)}
+
+/* ── KARTON LIST ── */
+.ctn-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
+.ctn-row:last-child{border-bottom:none}
+.ctn-boxno{width:44px;height:44px;background:var(--blue);color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0}
+.ctn-info{flex:1;min-width:0}
+.ctn-style{font-size:.88rem;font-weight:700;color:#1a2332;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctn-sub{font-size:.73rem;color:#64748b;margin-top:2px}
+.ctn-pcs{font-size:.88rem;font-weight:800;color:var(--green);flex-shrink:0}
+
+/* ── BOTTOM NAV ── */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);display:flex;z-index:100;padding-bottom:env(safe-area-inset-bottom)}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;border:none;background:none;cursor:pointer;color:#94a3b8;font-size:.62rem;font-weight:600}
+.nav-btn.active{color:var(--blue-light)}
+.nav-btn .nav-icon{font-size:1.3rem}
+
+/* ── PRINT ── */
+.print-label-area{display:none}
+@media print{
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  body{background:white}
+  .header,.bottom-nav,.screen,.toast{display:none!important}
+  .print-label-area{display:none!important}
+  body.printing-label .print-label-area{display:block!important}
+}
+@media print{body.printing-label{size:A4 landscape}}
+.print-page-label{display:grid;grid-template-columns:1fr 4px 1fr;width:100%;page-break-after:always;height:210mm;overflow:hidden}
+.print-page-label:last-child{page-break-after:avoid}
+.cut-line{width:4px;display:flex;justify-content:center}
+.cut-line::after{content:'';display:block;width:0;height:100%;border-left:2px dashed #aaa}
+.label-col{position:relative;padding:8mm 8mm 8mm 10mm;display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;background:#fff}
+.label-field{font-family:Arial,sans-serif;font-weight:800;color:#000;line-height:1.1;margin-bottom:4mm;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.label-qr-wrap{position:absolute;bottom:6mm;right:6mm;text-align:center;width:100px}
+
+/* ── SPINNER ── */
+.spinner{display:inline-block;width:20px;height:20px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── HOME SCREEN ── */
+.home-card{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 14px;background:#fff;border:1.5px solid var(--border);border-radius:16px;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .12s;width:100%;text-align:center}
+.home-card:active{transform:scale(.97);box-shadow:none}
+.home-card-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.6rem}
+.home-card-title{font-weight:800;font-size:.95rem;color:#1e293b}
+.home-card-sub{font-size:.72rem;color:#94a3b8;line-height:1.4}
+
+</style>
+<link rel="manifest" href="data:application/json,{
+  %22name%22: %22Export System%22,
+  %22short_name%22: %22ExportSys%22,
+  %22start_url%22: %22.%22,
+  %22display%22: %22standalone%22,
+  %22background_color%22: %22%23f0f4f8%22,
+  %22theme_color%22: %22%231e3a5f%22,
+  %22icons%22: [{
+    %22src%22: %22data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e3a5f'/><text y='.9em' font-size='80' x='10'>📦</text></svg>%22,
+    %22sizes%22: %22any%22,
+    %22type%22: %22image/svg+xml%22,
+    %22purpose%22: %22any maskable%22
+  }]
+}">
+<meta name="theme-color" content="#1e3a5f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Export System">
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    var swCode = 'const CACHE="es-v1";const FILES=["/"];self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));self.addEventListener("fetch",e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));';
+    var blob = new Blob([swCode], {type: 'application/javascript'});
+    var url = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(url);
+  });
+}
+</script>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header" id="main-header">
+  <div>
+    <div class="header-title">📦 Export System</div>
+    <div class="header-sub" id="header-sub">Loading...</div>
+  </div>
+  <button class="btn-icon" onclick="showSetup()" title="Setup Supabase">⚙️</button>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- PRINT AREA -->
+<div class="print-label-area" id="print-label-area"></div>
+
+<!-- ════════════════════════════════ -->
+<!-- SCREEN: SETUP                    -->
+<!-- ════════════════════════════════ -->
+<!-- ════ SCREEN: SETUP ════ -->
+<div class="screen" id="screen-setup">
+  <div class="setup-card">
+    <button onclick="backFromSetup()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:0 0 14px 0;cursor:pointer;display:flex;align-items:center;gap:5px">← Balik</button>
+    <div class="setup-icon">🔗</div>
+    <div class="setup-title">Setup Supabase</div>
+    <div class="setup-desc">Masukkan URL dan API Key untuk sambung ke database yang sama dengan sistem utama.</div>
+    <div class="field-group">
+      <div class="field-lbl">Supabase URL</div>
+      <input type="url" class="field-inp" id="setup-url" placeholder="https://xxxx.supabase.co" inputmode="url" autocomplete="off" autocorrect="off" autocapitalize="none" />
+    </div>
+    <div class="field-group">
+      <div class="field-lbl">Anon Key</div>
+      <input type="text" class="field-inp" id="setup-key" placeholder="eyJ..." autocomplete="off" autocorrect="off" autocapitalize="none" />
+    </div>
+    <button class="btn btn-primary" onclick="saveSetup()">🔗 Sambung</button>
+    <div style="margin-top:12px">
+      <button class="btn btn-ghost" style="width:100%" onclick="skipSetup()">Guna data tempatan sahaja</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ SCREEN: HOME ════ -->
+<div class="screen" id="screen-home">
+  <div style="padding:16px">
+    <!-- Status bar -->
+    <div class="status-bar" style="background:#fff;border-radius:10px;box-shadow:var(--shadow);margin-bottom:20px">
+      <div class="status-dot" id="sb-dot"></div>
+      <span id="sb-label">Tidak connect</span>
+      <span style="margin-left:auto;color:#94a3b8;font-size:.7rem" id="last-sync"></span>
+      <button onclick="syncNow()" style="border:none;background:none;color:#94a3b8;font-size:.8rem;cursor:pointer;padding:0 4px">🔄</button>
+      <button onclick="showSetup()" style="border:none;background:none;color:#94a3b8;font-size:.8rem;cursor:pointer;padding:0 4px">⚙️</button>
+    </div>
+
+    <!-- PL info -->
+    <div id="home-pl-info" style="display:none;background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--blue-light)">
+      <div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;margin-bottom:4px">Packing List Aktif</div>
+      <div style="font-weight:800;color:var(--blue);font-size:1rem" id="home-pl-name">—</div>
+      <div style="font-size:.75rem;color:#64748b;margin-top:2px" id="home-pl-sub">—</div>
+      <button onclick="showPLSelect()" style="margin-top:8px;border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;padding:0;cursor:pointer">Tukar PL →</button>
+    </div>
+    <div id="home-no-pl" style="background:#fff8e1;border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--yellow)">
+      <div style="font-size:.82rem;color:#92400e;font-weight:700">⚠️ Belum pilih Packing List</div>
+      <button onclick="showPLSelect()" style="margin-top:6px;border:none;background:var(--yellow);color:#fff;font-size:.8rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer">Pilih PL Sekarang</button>
+    </div>
+
+    <!-- Grid menu -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <button class="home-card" onclick="selectedPLId ? showForm() : showPLSelect()">
+        <div class="home-card-icon" style="background:linear-gradient(135deg,#2563eb,#1e40af)">✏️</div>
+        <div class="home-card-title">Input Karton</div>
+        <div class="home-card-sub">Tambah & simpan karton baru</div>
+      </button>
+      <button class="home-card" onclick="showVerify()">
+        <div class="home-card-icon" style="background:linear-gradient(135deg,#16a34a,#15803d)">🔍</div>
+        <div class="home-card-title">Loading Verify</div>
+        <div class="home-card-sub">Scan & verify karton dimuatkan</div>
+      </button>
+    </div>
+
+    <!-- Quick stats -->
+    <div id="home-stats" style="display:none;margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
+        <div style="font-size:1.6rem;font-weight:900;color:var(--blue-light)" id="home-stat-ctn">0</div>
+        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Karton</div>
+      </div>
+      <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
+        <div style="font-size:1.6rem;font-weight:900;color:var(--green)" id="home-stat-scan">0</div>
+        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Dah Verify</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ SCREEN: PL SELECT ════ -->
+<div class="screen" id="screen-pl">
+  <div style="padding:12px 12px 4px">
+    <button onclick="showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Balik</button>
+  </div>
+  <div class="card">
+    <div class="card-title">📋 Pilih Packing List</div>
+    <div id="pl-list-container">
+      <p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">Tiada PL. Buat dulu dari sistem utama.</p>
+    </div>
+    <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="syncNow()">🔄 Refresh Data</button>
+  </div>
+</div>
+
+<!-- ════ SCREEN: INPUT FORM ════ -->
+<div class="screen" id="screen-form">
+  <div style="background:var(--blue);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-weight:800;font-size:.95rem" id="form-pl-name">—</div>
+      <div style="font-size:.72rem;opacity:.7;margin-top:2px" id="form-pl-sub">—</div>
+    </div>
+    <button class="btn-icon" onclick="showHome()" style="font-size:.75rem;width:auto;border-radius:8px;padding:6px 12px;gap:4px">← Home</button>
+  </div>
+  <div style="padding:10px 16px;background:#fff;border-bottom:1px solid var(--border)">
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem">
+      <span style="color:#64748b">Karton diinput</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button onclick="showList()" style="border:none;background:none;color:var(--blue-light);font-size:.75rem;font-weight:700;cursor:pointer">Lihat Senarai →</button>
+        <span id="form-progress" style="font-weight:800;color:var(--blue-light)">0 / 0</span>
+      </div>
+    </div>
+    <div class="prog-bg" style="margin-top:6px"><div class="prog-fill" id="form-prog-fill" style="width:0%"></div></div>
+  </div>
+  <div style="padding:12px;padding-bottom:30px">
+    <div class="form-section">
+      <label class="form-label">📦 Box No.</label>
+      <input type="number" class="form-inp big" id="f-boxno" inputmode="numeric" min="1" placeholder="001" />
+    </div>
+    <div id="form-items"></div>
+    <button class="btn btn-ghost" style="width:100%;margin-bottom:12px" onclick="addItem()">＋ Tambah Item Lagi</button>
+    <div style="background:#e0f2fe;border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;color:#0369a1">JUMLAH TOTAL</span>
+      <span style="font-size:1.4rem;font-weight:800;color:#0369a1"><span id="form-grand">0</span> PCS</span>
+    </div>
+    <div class="form-section">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <label class="form-label">⚖️ Berat (KG)</label>
+          <input type="number" class="form-inp" id="f-weight" inputmode="decimal" placeholder="0.00" step="0.01" />
+        </div>
+        <div>
+          <label class="form-label">📐 Ukuran (CM)</label>
+          <input type="text" class="form-inp" id="f-measure" placeholder="60x40x45" />
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-green" style="flex:2" onclick="submitCarton(false)">✅ Simpan Box</button>
+      <button class="btn btn-outline" style="flex:1" onclick="submitCarton(true)">🖨️ Print</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ SCREEN: KARTON LIST ════ -->
+<div class="screen" id="screen-list">
+  <div style="padding:12px 12px 4px">
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-ghost" style="padding:10px 14px" onclick="showForm()">← Input</button>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:.95rem;color:var(--blue)" id="list-pl-name">—</div>
+        <div style="font-size:.72rem;color:#64748b" id="list-pl-sub">—</div>
+      </div>
+      <button class="btn btn-ghost" style="padding:10px 14px" onclick="showHome()">Home</button>
+    </div>
+  </div>
+  <div class="card">
+    <div id="ctn-list-wrap">
+      <p style="color:#94a3b8;text-align:center;padding:20px">Tiada karton lagi.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════ SCREEN: LOADING VERIFY ════ -->
+<div class="screen" id="screen-verify">
+  <div style="padding:12px 12px 4px">
+    <button onclick="stopVerifyScan(); showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Balik</button>
+  </div>
+  <div style="padding:0 12px">
+    <div style="background:#eff6ff;border-radius:12px;padding:12px 16px;margin-bottom:4px;border-left:4px solid var(--blue-light);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:.7rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">Packing List</div>
+        <div style="font-weight:800;color:var(--blue);font-size:1rem" id="verify-pl-name">—</div>
+      </div>
+      <button onclick="showPLSelect()" style="border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;cursor:pointer">Tukar →</button>
+    </div>
+    <div class="card">
+      <div class="card-title">🔍 Scan Carton QR</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button id="vtab-cam" class="btn btn-primary" style="flex:1;font-size:.85rem" onclick="setVerifyMode('cam')">📷 Camera</button>
+        <button id="vtab-scanner" class="btn btn-ghost" style="flex:1;font-size:.85rem" onclick="setVerifyMode('scanner')">🔌 Manual</button>
+      </div>
+      <div id="vmode-cam">
+        <div id="vscan-video-wrap" style="display:none;position:relative;width:100%;max-width:400px;margin:0 auto 12px;border-radius:10px;overflow:hidden;background:#000">
+          <video id="vscan-video" style="width:100%;display:block" playsinline autoplay muted></video>
+          <canvas id="vscan-canvas" style="display:none"></canvas>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+            <div style="width:200px;height:200px;border:3px solid rgba(255,255,255,.7);border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.4)"></div>
+          </div>
+        </div>
+        <button id="vscan-start-btn" class="btn btn-primary" style="width:100%;padding:14px;font-size:1rem" onclick="startVerifyScan()">📷 Buka Kamera</button>
+        <button id="vscan-stop-btn" class="btn btn-ghost" style="width:100%;display:none;margin-top:8px" onclick="stopVerifyScan()">⏹ Stop Kamera</button>
+      </div>
+      <div id="vmode-scanner" style="display:none">
+        <input type="text" id="vmanual-input" placeholder="Scan atau taip QR text..."
+          style="width:100%;padding:14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;margin-bottom:8px"
+          onkeydown="if(event.key==='Enter') doManualVerify()" />
+        <button class="btn btn-primary" style="width:100%" onclick="doManualVerify()">✅ Submit</button>
+      </div>
+    </div>
+    <div id="verify-list-wrap"></div>
+  </div>
+</div>
+
+<script>
+// ══ CONSTANTS ══
+const SIZES = ['XS','S','M','L','XL','2XL','3XL','4XL','5XL','6XL'];
+const COLOUR_MAP = {
+  '2':'OPAL BLACK','24':'ANTIQUE WHITE','20':'DARK NAVY','75':'DARK BROWN',
+  '95':'BURGUNDY RED','63':'MAHOGANY RED','96':'DUSTY LILAC','97':'LIGHT BLUE',
+  '41':'ECRU BEIGE','56':'DUSTY PINK','73':'EMERALD GREEN','99':'ESPRESSO',
+  '35':'HAZEL BROWN','105':'DARK PURPLE','101':'SOFT PINK','50':'PICKLE GREEN',
+  '106':'ASH GREY','43':'MINT GREEN','44':'LIGHT OLIVE','68':'STONE BLUE',
+  '114':'BEIGE','115':'GRASS GREEN','116':'KUNING LANGSAT','117':'COFFEE BROWN',
+  '118':'BEAN BROWN','119':'DARK INDIGO','120':'SMOKEY PINK','121':'DARK ROSE',
+  '122':'ROYAL BLUE','123':'DEEP GREEN','124':'TURQUOISE','125':'HONEYDEW',
+  '126':'DEEP TEAL','127':'PURPLE YAM','128':'ROSE RED','129':'PINK BELACAN',
+  '130':'PURPLE MANGGIS','131':'APRICOT','132':'BUTTERMILK','133':'LIGHT KHAKI',
+  '134':'LIGHT TAUPE'
+};
+const ITEMS = [
+  'BMTB MODERN FIT','BMTB CLASSIC FIT','BMCM MODERN FIT','BMCM CLASSIC FIT',
+  'MEN TOP','TOP QUARTER','COLLARED TOP',
+  'BMTB BOY','BMCM BOY','BMTB BABY BOY',
+  'WOMEN KEBAYA','WOMEN KURUNG KEDAH','WOMEN KURUNG RIAU',
+  'GIRL BAJU KEBAYA','GIRL BAJU KURUNG','BABY GIRL BAJU KURUNG'
+];
+
+// ══ STATE ══
+var SB_URL = localStorage.getItem('sb_url') || '';
+var SB_KEY = localStorage.getItem('sb_key') || '';
+var pls = [];
+var scannedMap = {};
+var selectedPLId = null;
+var itemCounter = 0;
+var _gtTimer = null;
+
+// ══ UTILS ══
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function v(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function toast(msg, dur) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, dur || 2500);
+}
+function getPL(id) { return pls.find(function(p){ return p.id === id; }) || null; }
+
+// ══ STORAGE ══
+function load() {
+  try { pls = JSON.parse(localStorage.getItem('export_pls')) || []; } catch(e) { pls = []; }
+  try { scannedMap = JSON.parse(localStorage.getItem('export_scanned')) || {}; } catch(e) { scannedMap = {}; }
+}
+function save() {
+  localStorage.setItem('export_pls', JSON.stringify(pls));
+  localStorage.setItem('export_scanned', JSON.stringify(scannedMap));
+  syncToSupabase();
+}
+
+// ══ SUPABASE ══
+function sbHeaders() {
+  return { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
+}
+function syncToSupabase() {
+  if (!SB_URL || !SB_KEY) return;
+  var payload = JSON.stringify({ key: 'main', value: { pls: pls, scannedMap: scannedMap } });
+  fetch(SB_URL + '/rest/v1/export_data', { method: 'POST', headers: sbHeaders(), body: payload })
+    .catch(function(){});
+}
+function loadFromSupabase(cb) {
+  if (!SB_URL || !SB_KEY) { cb(false); return; }
+  fetch(SB_URL + '/rest/v1/export_data?key=eq.main&select=value', { headers: sbHeaders() })
+    .then(function(r){ return r.json(); })
+    .then(function(rows){
+      var data = rows && rows[0] && rows[0].value;
+      if (data && Array.isArray(data.pls)) {
+        if (data.pls.length === 0 && pls.length > 0) {
+          syncToSupabase(); cb(true);
+        } else {
+          pls = data.pls;
+          scannedMap = data.scannedMap || {};
+          localStorage.setItem('export_pls', JSON.stringify(pls));
+          localStorage.setItem('export_scanned', JSON.stringify(scannedMap));
+          cb(true);
+        }
+      } else { cb(false); }
+    })
+    .catch(function(){ cb(false); });
+}
+
+// ══ SETUP ══
+function saveSetup() {
+  var url = document.getElementById('setup-url').value.trim().replace(/\/$/, '');
+  var key = document.getElementById('setup-key').value.trim();
+  if (!url || !key) { toast('⚠️ Sila isi URL dan Key!'); return; }
+  SB_URL = url; SB_KEY = key;
+  localStorage.setItem('sb_url', SB_URL);
+  localStorage.setItem('sb_key', SB_KEY);
+  toast('🔄 Menyambung...');
+  loadFromSupabase(function(ok) {
+    updateStatus();
+    if (ok) { toast('✅ Berjaya! Data dimuatkan.'); showPLSelect(); }
+    else { toast('⚠️ Gagal sambung. Semak URL/Key.'); }
+  });
+}
+function skipSetup() {
+  if (pls.length > 0) showHome();
+  else { toast('Tiada data tempatan.'); }
+}
+function showSetup() {
+  document.getElementById('setup-url').value = SB_URL;
+  document.getElementById('setup-key').value = SB_KEY;
+  showScreen('screen-setup');
+  document.getElementById('bottom-nav').style.display = 'none';
+}
+function backFromSetup() {
+  if (selectedPLId) { showForm(); }
+  else if (pls.length > 0) { showPLSelect(); }
+  else { toast('Sambung Supabase dulu untuk muat data.'); }
+}
+
+// ══ STATUS ══
+function updateStatus() {
+  var dot = document.getElementById('sb-dot');
+  var lbl = document.getElementById('sb-label');
+  var connected = !!(SB_URL && SB_KEY);
+  if (dot) { dot.className = 'status-dot ' + (connected ? 'green' : 'red'); }
+  if (lbl) { lbl.textContent = connected ? '🟢 Supabase connected' : '🔴 Tidak connect'; }
+  var sub = document.getElementById('header-sub');
+  if (sub) { sub.textContent = connected ? 'Supabase ✓' : 'Offline mode'; }
+}
+function syncNow() {
+  if (!SB_URL || !SB_KEY) { toast('⚠️ Belum setup Supabase.'); return; }
+  toast('🔄 Syncing...');
+  loadFromSupabase(function(ok) {
+    if (ok) { renderPLList(); toast('✅ Data terkini!'); } else { toast('❌ Gagal sync.'); }
+  });
+  var el = document.getElementById('last-sync');
+  if (el) { el.textContent = 'Sync: ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}); }
+}
+
+// ══ SCREEN MANAGEMENT ══
+function showScreen(id) {
+  if (id !== 'screen-verify') stopVerifyScan();
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+// showPLSelect defined below
+// showForm defined below
+// showList defined below
+// goBack/goBackFromList defined below
+
+
+// ══ PL LIST ══
+function renderPLList() {
+  var el = document.getElementById('pl-list-container');
+  if (!el) return;
+  if (pls.length === 0) {
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">Tiada PL. Buat dulu dari sistem utama.</p>';
+    return;
+  }
+  el.innerHTML = pls.map(function(pl) {
+    var packed = pl.cartons.length;
+    var total = pl.total || packed;
+    var pct = total > 0 ? Math.round(packed / total * 100) : 0;
+    var sel = pl.id === selectedPLId ? ' selected' : '';
+    return '<button class="pl-btn' + sel + '" onclick="selectPL(\'' + pl.id + '\')">'
+      + '<div class="pl-btn-name">' + pl.name + '</div>'
+      + '<div class="pl-btn-sub">' + (pl.invNo || '—') + ' &bull; ' + (pl.dest || '—') + '</div>'
+      + '<span class="pl-btn-badge">' + packed + ' karton diinput</span>'
+      + '<div class="prog-bg" style="margin-top:8px"><div class="prog-fill" style="width:' + pct + '%"></div></div>'
+      + '</button>';
+  }).join('');
+}
+function selectPL(id) {
+  selectedPLId = id;
+  initForm();
+  showHome();
+}
+
+// ══ FORM INIT ══
+function updateFormHeader() {
+  var pl = getPL(selectedPLId);
+  if (!pl) return;
+  document.getElementById('form-pl-name').textContent = pl.name;
+  document.getElementById('form-pl-sub').textContent = (pl.invNo || '') + ' | ' + (pl.dest || '');
+  var packed = pl.cartons.length;
+  var total = pl.total || '—';
+  document.getElementById('form-progress').textContent = packed + ' / ' + total;
+  var pct = pl.total > 0 ? Math.round(packed / pl.total * 100) : 0;
+  document.getElementById('form-prog-fill').style.width = pct + '%';
+}
+function initForm() {
+  var pl = getPL(selectedPLId);
+  if (!pl) return;
+  // Auto next box number
+  var nextBox = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return c.boxNo; })) + 1 : 1;
+  document.getElementById('f-boxno').value = nextBox;
+  document.getElementById('f-weight').value = '';
+  document.getElementById('f-measure').value = '';
+  clearItems();
+  updateFormHeader();
+}
+
+// ══ ITEM ROWS ══
+function itemOpts() {
+  return '<option value="">-- Pilih Item --</option>' + ITEMS.map(function(i){ return '<option value="' + i + '">' + i + '</option>'; }).join('');
+}
+function addItem(data) {
+  data = data || {};
+  var id = ++itemCounter;
+  var container = document.getElementById('form-items');
+  var rowNum = container.children.length + 1;
+  var sizeGrid = SIZES.map(function(s) {
+    return '<div class="size-cell">'
+      + '<div class="size-lbl">' + s + '</div>'
+      + '<input type="number" class="size-inp ir-size" data-size="' + s + '" data-rid="' + id + '"'
+      + ' placeholder="0" min="0" inputmode="numeric" value="' + (data.sizes && data.sizes[s] ? data.sizes[s] : '') + '"'
+      + ' oninput="debouncedGrandTotal()" />'
+      + '</div>';
+  }).join('');
+
+  var div = document.createElement('div');
+  div.className = 'item-block';
+  div.id = 'irow-' + id;
+  div.innerHTML = '<div class="item-block-head">'
+    + '<span class="item-num">Item ' + rowNum + '</span>'
+    + (rowNum > 1 ? '<button class="btn btn-red" onclick="removeItem(\'irow-' + id + '\')">✕ Buang</button>' : '')
+    + '</div>'
+    + '<div style="margin-bottom:10px">'
+    + '<label class="form-label">Item Description</label>'
+    + '<select class="form-select ir-style">' + itemOpts() + '</select>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+    + '<div><label class="form-label">Color Code</label>'
+    + '<input type="text" class="form-inp ir-ccode" placeholder="63" inputmode="numeric" value="' + (data.colorCode || '') + '" oninput="autoFillColor(this)" /></div>'
+    + '<div><label class="form-label">Color Name</label>'
+    + '<input type="text" class="form-inp ir-cname" placeholder="Auto-fill" readonly style="background:#f8faff;font-size:.9rem" value="' + (data.colorName || '') + '" /></div>'
+    + '</div>'
+    + '<label class="form-label">Qty Per Size</label>'
+    + '<div class="size-grid">' + sizeGrid + '</div>'
+    + '<div class="item-subtotal" id="isub-' + id + '">Subtotal: 0 PCS</div>';
+
+  if (data.style) {
+    setTimeout(function(){ var s = div.querySelector('.ir-style'); if(s) s.value = data.style; }, 0);
+  }
+  container.appendChild(div);
+  updateGrandTotal();
+}
+function removeItem(rowId) {
+  var el = document.getElementById(rowId);
+  if (el) el.remove();
+  // Re-number
+  var container = document.getElementById('form-items');
+  Array.from(container.children).forEach(function(block, i) {
+    var t = block.querySelector('.item-num');
+    if (t) t.textContent = 'Item ' + (i + 1);
+  });
+  updateGrandTotal();
+}
+function clearItems() {
+  document.getElementById('form-items').innerHTML = '';
+  itemCounter = 0;
+  addItem();
+}
+function autoFillColor(inp) {
+  var code = inp.value.trim();
+  var block = inp.closest('.item-block');
+  var nameEl = block.querySelector('.ir-cname');
+  var found = COLOUR_MAP[code] || '';
+  nameEl.value = found;
+  nameEl.style.color = found ? 'var(--green)' : '#94a3b8';
+  debouncedGrandTotal();
+}
+function updateGrandTotal() {
+  var container = document.getElementById('form-items');
+  var grand = 0;
+  container.querySelectorAll('.item-block').forEach(function(block) {
+    var sub = 0;
+    block.querySelectorAll('.ir-size').forEach(function(inp){ sub += parseInt(inp.value) || 0; });
+    grand += sub;
+    var subEl = block.querySelector('[id^="isub-"]');
+    if (subEl) subEl.textContent = 'Subtotal: ' + sub + ' PCS';
+  });
+  var grandEl = document.getElementById('form-grand');
+  if (grandEl) grandEl.textContent = grand;
+}
+function debouncedGrandTotal() {
+  clearTimeout(_gtTimer);
+  _gtTimer = setTimeout(updateGrandTotal, 80);
+}
+function getItemsData() {
+  var items = [];
+  document.getElementById('form-items').querySelectorAll('.item-block').forEach(function(block) {
+    var styleEl = block.querySelector('.ir-style');
+    var codeEl = block.querySelector('.ir-ccode');
+    var nameEl = block.querySelector('.ir-cname');
+    var sizes = {};
+    var pcs = 0;
+    block.querySelectorAll('.ir-size').forEach(function(inp) {
+      var val = parseInt(inp.value) || 0;
+      sizes[inp.dataset.size] = val;
+      pcs += val;
+    });
+    items.push({
+      style: styleEl ? styleEl.value : '',
+      colorCode: codeEl ? codeEl.value.trim() : '',
+      colorName: nameEl ? nameEl.value : '',
+      sizes: sizes,
+      pcs: pcs
+    });
+  });
+  return items;
+}
+
+// ══ SUBMIT CARTON ══
+function submitCarton(doPrint) {
+  var pl = getPL(selectedPLId);
+  if (!pl) { toast('⚠️ Pilih PL dulu!'); return; }
+  var boxNo = parseInt(v('f-boxno'));
+  if (!boxNo) { toast('⚠️ Masukkan Box No!'); return; }
+
+  // Check duplicate
+  if (pl.cartons.find(function(c){ return c.boxNo === boxNo; })) {
+    if (!confirm('Box ' + boxNo + ' dah ada. Replace?')) return;
+    pl.cartons = pl.cartons.filter(function(c){ return c.boxNo !== boxNo; });
+  }
+
+  var items = getItemsData();
+  if (!items.length || !items[0].style) { toast('⚠️ Sila pilih Item Description!'); return; }
+  var tPcs = items.reduce(function(s, it){ return s + it.pcs; }, 0);
+
+  var carton = {
+    id: uid(), boxNo: boxNo, items: items,
+    totalPcs: tPcs,
+    weight: v('f-weight'),
+    measure: v('f-measure'),
+    ts: new Date().toISOString()
+  };
+  pl.cartons.push(carton);
+  pl.cartons.sort(function(a, b){ return a.boxNo - b.boxNo; });
+  save();
+  toast('✅ Box ' + String(boxNo).padStart(3, '0') + ' disimpan!');
+  if (doPrint) printLabel(pl, carton);
+  initForm(); // auto-increment & reset
+  updateFormHeader();
+}
+
+// ══ CARTON LIST ══
+function renderCartonList() {
+  var pl = getPL(selectedPLId);
+  if (!pl) return;
+  document.getElementById('list-pl-name').textContent = pl.name;
+  document.getElementById('list-pl-sub').textContent = pl.cartons.length + ' karton diinput | ' + (pl.invNo || '') + ' | ' + (pl.dest || '');
+  var el = document.getElementById('ctn-list-wrap');
+  if (pl.cartons.length === 0) {
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">Tiada karton lagi.</p>';
+    return;
+  }
+  var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
+  el.innerHTML = sorted.map(function(c) {
+    var items = c.items && c.items.length ? c.items : [{ style: c.style || '', colorCode: c.colorCode || '', colorName: c.colorName || '', sizes: c.sizes || {}, pcs: c.totalPcs || 0 }];
+    var styleStr = items.map(function(it){ return it.style || ''; }).filter(Boolean).join(' / ') || '—';
+    var colorStr = items.map(function(it){ return (it.colorCode ? it.colorCode + ' ' : '') + (it.colorName || ''); }).filter(Boolean).join(' / ') || '—';
+    return '<div class="ctn-row">'
+      + '<div class="ctn-boxno">' + String(c.boxNo).padStart(3,'0') + '</div>'
+      + '<div class="ctn-info">'
+      + '<div class="ctn-style">' + styleStr + '</div>'
+      + '<div class="ctn-sub">' + colorStr + (c.weight ? ' | ' + c.weight + 'kg' : '') + '</div>'
+      + '</div>'
+      + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'
+      + '<div class="ctn-pcs">' + (c.totalPcs || 0) + ' PCS</div>'
+      + '<button class="btn btn-ghost" style="padding:5px 10px;font-size:.72rem" onclick="printLabelById(\'' + pl.id + '\',\'' + c.id + '\')">🖨️</button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+// ══ LABEL PRINT ══
+function fieldFontSize(text) {
+  var len = (text || '').length;
+  if (len <= 14) return '36pt';
+  if (len <= 18) return '28pt';
+  if (len <= 24) return '22pt';
+  return '16pt';
+}
+function buildLabelCol(fields, itemCount, qrText) {
+  var fieldDivs = fields.map(function(f) {
+    var fs = fieldFontSize(f);
+    var ws = (f || '').length > 14 ? 'normal' : 'nowrap';
+    return '<div class="label-field" style="font-size:' + fs + ';white-space:' + ws + '">' + f + '</div>';
+  }).join('');
+  var qrDiv = qrText
+    ? '<div class="label-qr-wrap"><div class="label-qr" data-qr-text="' + qrText + '"></div>'
+      + '<div style="font-size:6.5pt;font-family:Arial;font-weight:700;color:#000;margin-top:3px;line-height:1.3;white-space:pre;text-align:center">' + qrText.replace(/ \| /g, '\n') + '</div></div>'
+    : '';
+  return '<div class="label-col">' + fieldDivs + qrDiv + '</div>';
+}
+function generateQRCodes(callback) {
+  var divs = document.querySelectorAll('.label-qr[data-qr-text]');
+  if (!divs.length || typeof QRCode === 'undefined') { callback(); return; }
+  divs.forEach(function(div) {
+    div.innerHTML = '';
+    new QRCode(div, { text: div.getAttribute('data-qr-text'), width: 90, height: 90, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
+  });
+  setTimeout(callback, 600);
+}
+function cartonLabelFields(pl, c) {
+  var items = c.items && c.items.length ? c.items : [{ style: c.style || '', colorCode: c.colorCode || '', colorName: c.colorName || '', sizes: c.sizes || {}, pcs: c.totalPcs || 0 }];
+  var total = pl.total || pl.cartons.length;
+  var ctnStr = String(c.boxNo).padStart(3,'0') + '/' + String(total).padStart(3,'0');
+  var boxStr = String(c.boxNo).padStart(3,'0');
+  var styles = [], colorOrder = [], colorMap = {};
+  items.forEach(function(it) {
+    if (it.style && styles.indexOf(it.style) < 0) styles.push(it.style);
+    var code = it.colorCode || '';
+    if (!colorMap[code]) { colorOrder.push(code); colorMap[code] = { name: it.colorName || '', pcs: 0 }; }
+    colorMap[code].pcs += (it.pcs || 0);
+  });
+  var seenSizes = [];
+  items.forEach(function(it) {
+    SIZES.forEach(function(s) { if ((it.sizes && it.sizes[s] > 0) && seenSizes.indexOf(s) < 0) seenSizes.push(s); });
+  });
+  function uniq(arr) { return arr.filter(function(v,i,a){ return v && a.indexOf(v) === i; }); }
+  var pcsList = colorOrder.map(function(c){ return String(colorMap[c].pcs); });
+  var grandPcs = pcsList.reduce(function(s,v){ return s + parseInt(v||0); }, 0);
+  var qrText = 'BOX:' + boxStr + ' | ' + ctnStr + ' | ' + pl.name + ' | PCS:' + grandPcs;
+  return {
+    fields: [
+      uniq(styles).join(' / '),
+      uniq(colorOrder).join(' / '),
+      colorOrder.map(function(c){ return colorMap[c].name; }).join(' / '),
+      seenSizes.length ? seenSizes[0] + (seenSizes.length > 1 ? '~' + seenSizes[seenSizes.length-1] : '') : '—',
+      pcsList.join(' / '),
+      pl.origin || 'MALAYSIA',
+      pl.dest || '',
+      ctnStr, boxStr
+    ],
+    itemCount: colorOrder.length,
+    qrText: qrText
+  };
+}
+function printLabel(pl, carton) {
+  var result = cartonLabelFields(pl, carton);
+  var col = buildLabelCol(result.fields, result.itemCount, result.qrText);
+  var col2 = buildLabelCol(result.fields, result.itemCount, result.qrText);
+  document.getElementById('print-label-area').innerHTML = '<div class="print-page-label">' + col + '<div class="cut-line"></div>' + col2 + '</div>';
+  document.body.classList.add('printing-label');
+  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); });
+}
+function printLabelById(plId, ctnId) {
+  var pl = getPL(plId);
+  var c = pl ? pl.cartons.find(function(x){ return x.id === ctnId; }) : null;
+  if (!pl || !c) return;
+  printLabel(pl, c);
+}
+
+// window.onload defined below
+
+
+
+// ════ HOME + NAVIGATION ════
+function showHome() {
+  stopVerifyScan();
+  showScreen('screen-home');
+  updateHomeCards();
+}
+
+function updateHomeCards() {
+  var pl = selectedPLId ? pls.find(function(p){ return p.id === selectedPLId; }) : null;
+  var infoEl = document.getElementById('home-pl-info');
+  var noPlEl = document.getElementById('home-no-pl');
+  if (pl) {
+    if (infoEl) infoEl.style.display = '';
+    if (noPlEl) noPlEl.style.display = 'none';
+    var nm = document.getElementById('home-pl-name');
+    var sb2 = document.getElementById('home-pl-sub');
+    if (nm) nm.textContent = pl.name;
+    if (sb2) sb2.textContent = (pl.destination||'') + (pl.shipDate ? '  •  ' + pl.shipDate : '');
+    var total = pl.cartons.length;
+    var scanned = pl.cartons.filter(function(c){ return scannedMap[c.id]; }).length;
+    var sc = document.getElementById('home-stat-ctn');
+    var ss = document.getElementById('home-stat-scan');
+    if (sc) sc.textContent = total;
+    if (ss) ss.textContent = scanned;
+    var statsEl = document.getElementById('home-stats');
+    if (statsEl) statsEl.style.display = 'grid';
+  } else {
+    if (infoEl) infoEl.style.display = 'none';
+    if (noPlEl) noPlEl.style.display = '';
+    var statsEl = document.getElementById('home-stats');
+    if (statsEl) statsEl.style.display = 'none';
+  }
+}
+
+function showScreen(id) {
+  if (id !== 'screen-verify') stopVerifyScan();
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function showSetup() {
+  showScreen('screen-setup');
+  var urlEl = document.getElementById('setup-url');
+  var keyEl = document.getElementById('setup-key');
+  if (urlEl) urlEl.value = SB_URL;
+  if (keyEl) keyEl.value = SB_KEY;
+}
+
+function backFromSetup() { showHome(); }
+function skipSetup() { showHome(); }
+
+function showPLSelect() {
+  stopVerifyScan();
+  showScreen('screen-pl');
+  renderPLList();
+  updateStatus();
+}
+
+function showForm() {
+  if (!selectedPLId) { showPLSelect(); return; }
+  showScreen('screen-form');
+  updateFormHeader();
+}
+
+function showList() {
+  if (!selectedPLId) { showPLSelect(); return; }
+  showScreen('screen-list');
+  renderCartonList();
+}
+
+function showVerify() {
+  showScreen('screen-verify');
+  initVerifyPage();
+}
+
+function goBack() { showHome(); }
+function goBackFromList() { showForm(); }
+
+
+window.onload = function() {
+  load();
+  if (SB_URL && SB_KEY) {
+    loadFromSupabase(function(ok) {
+      if (ok) showToast('Data loaded.');
+    });
+  }
+  updateStatus();
+  if (!SB_URL && !SB_KEY) {
+    showSetup();
+  } else {
+    showHome();
+  }
+};
+</script>
+
+<div id="print-label-area-out" class="print-label-area"></div>
+</body>
+</html>
