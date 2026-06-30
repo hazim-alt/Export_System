@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ms">
 <head>
@@ -350,10 +351,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
-    var swCode = 'const CACHE="es-v1";const FILES=["/"];self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));self.addEventListener("fetch",e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));';
-    var blob = new Blob([swCode], {type: 'application/javascript'});
-    var url = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(url);
+    try {
+      var swCode = 'const CACHE="es-v1";const FILES=["/"];self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));self.addEventListener("fetch",e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));';
+      var blob = new Blob([swCode], {type: 'application/javascript'});
+      var url = URL.createObjectURL(blob);
+      navigator.serviceWorker.register(url).catch(function(){});
+    } catch(e) {}
   });
 }
 </script>
@@ -504,7 +507,7 @@ if ('serviceWorker' in navigator) {
         </div>
         <div>
           <label class="form-label">📐 Measure (CM)</label>
-          <input type="text" class="form-inp" id="f-measure" placeholder="60x40x45" />
+          <input type="text" class="form-inp" id="f-measure" placeholder="72x46x31.5" />
         </div>
       </div>
     </div>
@@ -695,12 +698,7 @@ function skipSetup() {
   if (pls.length > 0) showHome();
   else { showToast('Tiada data tempatan.'); }
 }
-function showSetup() {
-  document.getElementById('setup-url').value = SB_URL;
-  document.getElementById('setup-key').value = SB_KEY;
-  showScreen('screen-setup');
-  document.getElementById('bottom-nav').style.display = 'none';
-}
+// showSetup defined below
 function backFromSetup() {
   if (selectedPLId) { showForm(); }
   else if (pls.length > 0) { showPLSelect(); }
@@ -727,17 +725,7 @@ function syncNow() {
   if (el) { el.textContent = 'Sync: ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}); }
 }
 
-// ══ SCREEN MANAGEMENT ══
-function showScreen(id) {
-  if (id !== 'screen-verify') stopVerifyScan();
-  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
-  var el = document.getElementById(id);
-  if (el) el.classList.add('active');
-}
-// showPLSelect defined below
-// showForm defined below
-// showList defined below
-// goBack/goBackFromList defined below
+// showScreen defined below
 
 
 // ══ PL LIST ══
@@ -786,7 +774,7 @@ function initForm() {
   var nextBox = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return c.boxNo; })) + 1 : 1;
   document.getElementById('f-boxno').value = nextBox;
   document.getElementById('f-weight').value = '';
-  document.getElementById('f-measure').value = '';
+  document.getElementById('f-measure').value = '72x46x31.5';
   clearItems();
   updateFormHeader();
 }
@@ -1184,6 +1172,7 @@ window.onload = function() {
             if (id === 'screen-form') updateFormHeader();
             if (id === 'screen-list') renderCartonList();
             if (id === 'screen-home') updateHomeCards();
+            if (id === 'screen-verify') renderVerifyList();
           }
         }
       });
@@ -1191,7 +1180,5 @@ window.onload = function() {
   }
 };
 </script>
-
-<div id="print-label-area-out" class="print-label-area"></div>
 </body>
 </html>
