@@ -27,7 +27,7 @@ function initVerifyPage() {
   if (!vscanPLId && selectedPLId) vscanPLId = selectedPLId;
   var pl = vscanPLId ? pls.find(function(p){ return p.id === vscanPLId; }) : null;
   var nameEl = document.getElementById('verify-pl-name');
-  if (nameEl) nameEl.textContent = pl ? pl.name : '— Tiada PL dipilih —';
+  if (nameEl) nameEl.textContent = pl ? pl.name : '— No PL selected —';
   renderVerifyList();
 }
 
@@ -40,18 +40,17 @@ function onVerifyPLChange() {
 }
 
 function startVerifyScan() {
-  if (typeof jsQR === 'undefined') { showToast('Library QR tidak load. Pastikan ada internet.'); return; }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('Browser tidak support kamera.'); return; }
+  if (typeof jsQR === 'undefined') { showToast('QR library not loaded. Check internet connection.'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('Camera not supported by this browser.'); return; }
   var video = document.getElementById('vscan-video');
   document.getElementById('vscan-video-wrap').style.display = '';
-  document.getElementById('vscan-start-btn').style.display = 'none';
-  document.getElementById('vscan-stop-btn').style.display = '';
+  document.getElementById('vscan-controls').style.display = 'none';
   navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } })
     .then(function(stream) {
       vscanStream = stream;
       video.srcObject = stream;
       video.setAttribute('playsinline', true);
-      video.play().catch(function(){});
+      video.play().catch(function(e){ showToast('Camera error: ' + e.message); stopVerifyScan(); });
       function waitAndScan(attempt) {
         attempt = attempt || 0; attempt++;
         if (!vscanStream) return;
@@ -65,7 +64,7 @@ function startVerifyScan() {
       document.getElementById('vscan-video-wrap').style.display = 'none';
       document.getElementById('vscan-start-btn').style.display = '';
       document.getElementById('vscan-stop-btn').style.display = 'none';
-      var msg = err.name === 'NotAllowedError' ? 'Izin kamera ditolak.' : err.name === 'NotFoundError' ? 'Tiada kamera.' : 'Kamera error: ' + err.message;
+      var msg = err.name === 'NotAllowedError' ? 'Camera permission denied.' : err.name === 'NotFoundError' ? 'No camera found.' : 'Camera error: ' + err.message;
       showToast(msg);
     });
 }
@@ -77,10 +76,10 @@ function stopVerifyScan() {
   if (video) { video.srcObject = null; video.onloadedmetadata = null; }
   var wrap = document.getElementById('vscan-video-wrap');
   if (wrap) wrap.style.display = 'none';
+  var ctrl = document.getElementById('vscan-controls');
+  if (ctrl) ctrl.style.display = '';
   var sb = document.getElementById('vscan-start-btn');
-  var st = document.getElementById('vscan-stop-btn');
   if (sb) sb.style.display = '';
-  if (st) st.style.display = 'none';
 }
 
 function vscanTick() {
@@ -120,7 +119,7 @@ function processVerifyResult(text) {
       });
     }
   });
-  if (!foundPl || !foundC) { showToast('Carton tidak dijumpai.'); if (vscanMode === 'cam') setTimeout(startVerifyScan, 1200); return; }
+  if (!foundPl || !foundC) { showToast('Carton not found.'); if (vscanMode === 'cam') setTimeout(startVerifyScan, 1200); return; }
   scannedMap[foundC.id] = Date.now();
   saveScanned();
   renderVerifyList();
@@ -150,7 +149,7 @@ function renderVerifyList() {
   html += '</div>';
   html += '<div style="height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-bottom:14px">';
   html += '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:99px;transition:width .3s"></div></div>';
-  if (sorted.length === 0) { html += '<p style="text-align:center;color:#aaa;padding:12px">Tiada karton.</p>'; }
+  if (sorted.length === 0) { html += '<p style="text-align:center;color:#aaa;padding:12px">No cartons.</p>'; }
   else {
     sorted.forEach(function(c) {
       var done = !!scannedMap[c.id];
@@ -165,14 +164,14 @@ function renderVerifyList() {
       html += '</div>';
     });
   }
-  html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset Semua Scan</button>';
+  html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset All Scans</button>';
   html += '</div>';
   el.innerHTML = html;
 }
 
 function unscanVerify(ctnId) { delete scannedMap[ctnId]; saveScanned(); renderVerifyList(); }
 function resetVerifyPL(plId) {
-  if (!confirm('Reset semua scan untuk PL ini?')) return;
+  if (!confirm('Reset all scans for this PL?')) return;
   var pl = pls.find(function(p){ return p.id === plId; });
   if (!pl) return;
   pl.cartons.forEach(function(c){ delete scannedMap[c.id]; });
@@ -272,7 +271,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .status-dot.green{background:var(--green)}
 .status-dot.red{background:var(--red)}
 
-/* ── KARTON LIST ── */
+/* ── CARTON LIST ── */
 .ctn-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
 .ctn-row:last-child{border-bottom:none}
 .ctn-boxno{width:44px;height:44px;background:var(--blue);color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0}
@@ -316,6 +315,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .home-card-title{font-weight:800;font-size:.95rem;color:#1e293b}
 .home-card-sub{font-size:.72rem;color:#94a3b8;line-height:1.4}
 
+
+@keyframes scanline {
+  0% { top: 0%; }
+  50% { top: calc(100% - 2px); }
+  100% { top: 0%; }
+}
 </style>
 <link rel="manifest" href="data:application/json,{
   %22name%22: %22Export System%22,
@@ -370,10 +375,10 @@ if ('serviceWorker' in navigator) {
 <!-- ════ SCREEN: SETUP ════ -->
 <div class="screen" id="screen-setup">
   <div class="setup-card">
-    <button onclick="backFromSetup()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:0 0 14px 0;cursor:pointer;display:flex;align-items:center;gap:5px">← Balik</button>
+    <button onclick="backFromSetup()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:0 0 14px 0;cursor:pointer;display:flex;align-items:center;gap:5px">← Back</button>
     <div class="setup-icon">🔗</div>
     <div class="setup-title">Setup Supabase</div>
-    <div class="setup-desc">Masukkan URL dan API Key untuk sambung ke database yang sama dengan sistem utama.</div>
+    <div class="setup-desc">Enter the URL and API Key to connect to the same database as the main system.</div>
     <div class="field-group">
       <div class="field-lbl">Supabase URL</div>
       <input type="url" class="field-inp" id="setup-url" placeholder="https://xxxx.supabase.co" inputmode="url" autocomplete="off" autocorrect="off" autocapitalize="none" />
@@ -382,9 +387,9 @@ if ('serviceWorker' in navigator) {
       <div class="field-lbl">Anon Key</div>
       <input type="text" class="field-inp" id="setup-key" placeholder="eyJ..." autocomplete="off" autocorrect="off" autocapitalize="none" />
     </div>
-    <button class="btn btn-primary" onclick="saveSetup()">🔗 Sambung</button>
+    <button class="btn btn-primary" onclick="saveSetup()">🔗 Connect</button>
     <div style="margin-top:12px">
-      <button class="btn btn-ghost" style="width:100%" onclick="skipSetup()">Guna data tempatan sahaja</button>
+      <button class="btn btn-ghost" style="width:100%" onclick="skipSetup()">Use local data only</button>
     </div>
   </div>
 </div>
@@ -395,7 +400,7 @@ if ('serviceWorker' in navigator) {
     <!-- Status bar -->
     <div class="status-bar" style="background:#fff;border-radius:10px;box-shadow:var(--shadow);margin-bottom:20px">
       <div class="status-dot" id="sb-dot"></div>
-      <span id="sb-label">Tidak connect</span>
+      <span id="sb-label">Not connected</span>
       <span style="margin-left:auto;color:#94a3b8;font-size:.7rem" id="last-sync"></span>
       <button onclick="syncNow()" style="border:none;background:none;color:#94a3b8;font-size:.8rem;cursor:pointer;padding:0 4px">🔄</button>
       <button onclick="showSetup()" style="border:none;background:none;color:#94a3b8;font-size:.8rem;cursor:pointer;padding:0 4px">⚙️</button>
@@ -403,27 +408,27 @@ if ('serviceWorker' in navigator) {
 
     <!-- PL info -->
     <div id="home-pl-info" style="display:none;background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--blue-light)">
-      <div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;margin-bottom:4px">Packing List Aktif</div>
+      <div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;margin-bottom:4px">Active Packing List</div>
       <div style="font-weight:800;color:var(--blue);font-size:1rem" id="home-pl-name">—</div>
       <div style="font-size:.75rem;color:#64748b;margin-top:2px" id="home-pl-sub">—</div>
-      <button onclick="showPLSelect()" style="margin-top:8px;border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;padding:0;cursor:pointer">Tukar PL →</button>
+      <button onclick="showPLSelect()" style="margin-top:8px;border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;padding:0;cursor:pointer">Change PL →</button>
     </div>
     <div id="home-no-pl" style="background:#fff8e1;border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--yellow)">
-      <div style="font-size:.82rem;color:#92400e;font-weight:700">⚠️ Belum pilih Packing List</div>
-      <button onclick="showPLSelect()" style="margin-top:6px;border:none;background:var(--yellow);color:#fff;font-size:.8rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer">Pilih PL Sekarang</button>
+      <div style="font-size:.82rem;color:#92400e;font-weight:700">⚠️ No Packing List selected</div>
+      <button onclick="showPLSelect()" style="margin-top:6px;border:none;background:var(--yellow);color:#fff;font-size:.8rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer">Select PL Now</button>
     </div>
 
     <!-- Grid menu -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <button class="home-card" onclick="selectedPLId ? showForm() : showPLSelect()">
         <div class="home-card-icon" style="background:linear-gradient(135deg,#2563eb,#1e40af)">✏️</div>
-        <div class="home-card-title">Input Karton</div>
-        <div class="home-card-sub">Tambah & simpan karton baru</div>
+        <div class="home-card-title">Input Carton</div>
+        <div class="home-card-sub">Add & save new carton</div>
       </button>
       <button class="home-card" onclick="showVerify()">
         <div class="home-card-icon" style="background:linear-gradient(135deg,#16a34a,#15803d)">🔍</div>
         <div class="home-card-title">Loading Verify</div>
-        <div class="home-card-sub">Scan & verify karton dimuatkan</div>
+        <div class="home-card-sub">Scan & verify loaded cartons</div>
       </button>
     </div>
 
@@ -431,11 +436,11 @@ if ('serviceWorker' in navigator) {
     <div id="home-stats" style="display:none;margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
         <div style="font-size:1.6rem;font-weight:900;color:var(--blue-light)" id="home-stat-ctn">0</div>
-        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Karton</div>
+        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Cartons</div>
       </div>
       <div style="background:#fff;border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
         <div style="font-size:1.6rem;font-weight:900;color:var(--green)" id="home-stat-scan">0</div>
-        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Dah Verify</div>
+        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Verified</div>
       </div>
     </div>
   </div>
@@ -444,12 +449,12 @@ if ('serviceWorker' in navigator) {
 <!-- ════ SCREEN: PL SELECT ════ -->
 <div class="screen" id="screen-pl">
   <div style="padding:12px 12px 4px">
-    <button onclick="showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Balik</button>
+    <button onclick="showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Back</button>
   </div>
   <div class="card">
-    <div class="card-title">📋 Pilih Packing List</div>
+    <div class="card-title">📋 Select Packing List</div>
     <div id="pl-list-container">
-      <p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">Tiada PL. Buat dulu dari sistem utama.</p>
+      <p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">No PL found. Create from the main system first.</p>
     </div>
     <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="syncNow()">🔄 Refresh Data</button>
   </div>
@@ -466,9 +471,9 @@ if ('serviceWorker' in navigator) {
   </div>
   <div style="padding:10px 16px;background:#fff;border-bottom:1px solid var(--border)">
     <div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem">
-      <span style="color:#64748b">Karton diinput</span>
+      <span style="color:#64748b">Cartons entered</span>
       <div style="display:flex;gap:8px;align-items:center">
-        <button onclick="showList()" style="border:none;background:none;color:var(--blue-light);font-size:.75rem;font-weight:700;cursor:pointer">Lihat Senarai →</button>
+        <button onclick="showList()" style="border:none;background:none;color:var(--blue-light);font-size:.75rem;font-weight:700;cursor:pointer">View List →</button>
         <span id="form-progress" style="font-weight:800;color:var(--blue-light)">0 / 0</span>
       </div>
     </div>
@@ -480,31 +485,31 @@ if ('serviceWorker' in navigator) {
       <input type="number" class="form-inp big" id="f-boxno" inputmode="numeric" min="1" placeholder="001" />
     </div>
     <div id="form-items"></div>
-    <button class="btn btn-ghost" style="width:100%;margin-bottom:12px" onclick="addItem()">＋ Tambah Item Lagi</button>
+    <button class="btn btn-ghost" style="width:100%;margin-bottom:12px" onclick="addItem()">＋ Add More Items</button>
     <div style="background:#e0f2fe;border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;color:#0369a1">JUMLAH TOTAL</span>
+      <span style="font-weight:700;color:#0369a1">GRAND TOTAL</span>
       <span style="font-size:1.4rem;font-weight:800;color:#0369a1"><span id="form-grand">0</span> PCS</span>
     </div>
     <div class="form-section">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
-          <label class="form-label">⚖️ Berat (KG)</label>
+          <label class="form-label">⚖️ Weight (KG)</label>
           <input type="number" class="form-inp" id="f-weight" inputmode="decimal" placeholder="0.00" step="0.01" />
         </div>
         <div>
-          <label class="form-label">📐 Ukuran (CM)</label>
+          <label class="form-label">📐 Measure (CM)</label>
           <input type="text" class="form-inp" id="f-measure" placeholder="60x40x45" />
         </div>
       </div>
     </div>
     <div class="btn-row">
-      <button class="btn btn-green" style="flex:2" onclick="submitCarton(false)">✅ Simpan Box</button>
+      <button class="btn btn-green" style="flex:2" onclick="submitCarton(false)">✅ Save Box</button>
       <button class="btn btn-outline" style="flex:1" onclick="submitCarton(true)">🖨️ Print</button>
     </div>
   </div>
 </div>
 
-<!-- ════ SCREEN: KARTON LIST ════ -->
+<!-- ════ SCREEN: CARTON LIST ════ -->
 <div class="screen" id="screen-list">
   <div style="padding:12px 12px 4px">
     <div style="display:flex;gap:8px;align-items:center">
@@ -518,7 +523,7 @@ if ('serviceWorker' in navigator) {
   </div>
   <div class="card">
     <div id="ctn-list-wrap">
-      <p style="color:#94a3b8;text-align:center;padding:20px">Tiada karton lagi.</p>
+      <p style="color:#94a3b8;text-align:center;padding:20px">No cartons yet.</p>
     </div>
   </div>
 </div>
@@ -526,7 +531,7 @@ if ('serviceWorker' in navigator) {
 <!-- ════ SCREEN: LOADING VERIFY ════ -->
 <div class="screen" id="screen-verify">
   <div style="padding:12px 12px 4px">
-    <button onclick="stopVerifyScan(); showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Balik</button>
+    <button onclick="stopVerifyScan(); showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Back</button>
   </div>
   <div style="padding:0 12px">
     <div style="background:#eff6ff;border-radius:12px;padding:12px 16px;margin-bottom:4px;border-left:4px solid var(--blue-light);display:flex;justify-content:space-between;align-items:center">
@@ -534,30 +539,45 @@ if ('serviceWorker' in navigator) {
         <div style="font-size:.7rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">Packing List</div>
         <div style="font-weight:800;color:var(--blue);font-size:1rem" id="verify-pl-name">—</div>
       </div>
-      <button onclick="showPLSelect()" style="border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;cursor:pointer">Tukar →</button>
+      <button onclick="showPLSelect()" style="border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;cursor:pointer">Change →</button>
     </div>
-    <div class="card">
-      <div class="card-title">🔍 Scan Carton QR</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button id="vtab-cam" class="btn btn-primary" style="flex:1;font-size:.85rem" onclick="setVerifyMode('cam')">📷 Camera</button>
-        <button id="vtab-scanner" class="btn btn-ghost" style="flex:1;font-size:.85rem" onclick="setVerifyMode('scanner')">🔌 Manual</button>
-      </div>
-      <div id="vmode-cam">
-        <div id="vscan-video-wrap" style="display:none;position:relative;width:100%;max-width:400px;margin:0 auto 12px;border-radius:10px;overflow:hidden;background:#000">
-          <video id="vscan-video" style="width:100%;display:block" playsinline autoplay muted></video>
-          <canvas id="vscan-canvas" style="display:none"></canvas>
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
-            <div style="width:200px;height:200px;border:3px solid rgba(255,255,255,.7);border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.4)"></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <!-- Camera view - full width -->
+      <div id="vscan-video-wrap" style="position:relative;width:100%;background:#000;display:none">
+        <video id="vscan-video" style="width:100%;display:block;max-height:60vw;object-fit:cover" playsinline autoplay muted></video>
+        <canvas id="vscan-canvas" style="display:none"></canvas>
+        <!-- Scanning frame overlay -->
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+          <div style="position:relative;width:65%;aspect-ratio:1">
+            <div style="position:absolute;inset:0;box-shadow:0 0 0 9999px rgba(0,0,0,.55)"></div>
+            <!-- Corner marks -->
+            <div style="position:absolute;top:0;left:0;width:28px;height:28px;border-top:3px solid #fff;border-left:3px solid #fff;border-radius:4px 0 0 0"></div>
+            <div style="position:absolute;top:0;right:0;width:28px;height:28px;border-top:3px solid #fff;border-right:3px solid #fff;border-radius:0 4px 0 0"></div>
+            <div style="position:absolute;bottom:0;left:0;width:28px;height:28px;border-bottom:3px solid #fff;border-left:3px solid #fff;border-radius:0 0 0 4px"></div>
+            <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:3px solid #fff;border-right:3px solid #fff;border-radius:0 0 4px 0"></div>
+            <!-- Scan line -->
+            <div id="scan-line" style="position:absolute;left:0;right:0;top:0;height:2px;background:rgba(37,99,235,.85);animation:scanline 1.8s linear infinite"></div>
           </div>
         </div>
-        <button id="vscan-start-btn" class="btn btn-primary" style="width:100%;padding:14px;font-size:1rem" onclick="startVerifyScan()">📷 Buka Kamera</button>
-        <button id="vscan-stop-btn" class="btn btn-ghost" style="width:100%;display:none;margin-top:8px" onclick="stopVerifyScan()">⏹ Stop Kamera</button>
+        <!-- Stop button overlay -->
+        <button onclick="stopVerifyScan()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+        <p style="position:absolute;bottom:10px;left:0;right:0;text-align:center;color:rgba(255,255,255,.7);font-size:.75rem;margin:0">Point camera at QR code</p>
       </div>
-      <div id="vmode-scanner" style="display:none">
-        <input type="text" id="vmanual-input" placeholder="Scan atau taip QR text..."
-          style="width:100%;padding:14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;margin-bottom:8px"
-          onkeydown="if(event.key==='Enter') doManualVerify()" />
-        <button class="btn btn-primary" style="width:100%" onclick="doManualVerify()">✅ Submit</button>
+      <!-- Buttons when camera is off -->
+      <div id="vscan-controls" style="padding:14px">
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button id="vtab-cam" class="btn btn-primary" style="flex:1;font-size:.85rem" onclick="setVerifyMode('cam')">📷 Camera</button>
+          <button id="vtab-scanner" class="btn btn-ghost" style="flex:1;font-size:.85rem" onclick="setVerifyMode('scanner')">🔌 Manual</button>
+        </div>
+        <div id="vmode-cam">
+          <button id="vscan-start-btn" class="btn btn-primary" style="width:100%;padding:14px;font-size:1rem" onclick="startVerifyScan()">📷 Open Camera</button>
+        </div>
+        <div id="vmode-scanner" style="display:none">
+          <input type="text" id="vmanual-input" placeholder="Scan or type QR text..."
+            style="width:100%;padding:14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;margin-bottom:8px"
+            onkeydown="if(event.key==='Enter') doManualVerify()" />
+          <button class="btn btn-primary" style="width:100%" onclick="doManualVerify()">✅ Submit</button>
+        </div>
       </div>
     </div>
     <div id="verify-list-wrap"></div>
@@ -584,7 +604,7 @@ const ITEMS = [
   'BMTB MODERN FIT','BMTB CLASSIC FIT','BMCM MODERN FIT','BMCM CLASSIC FIT',
   'MEN TOP','TOP QUARTER','COLLARED TOP',
   'BMTB BOY','BMCM BOY','BMTB BABY BOY',
-  'WOMEN KEBAYA','WOMEN KURUNG KEDAH','WOMEN KURUNG RIAU',
+  'WOMEN KEBAYA','WOMEN KURUNG KEDONE','WOMEN KURUNG RIAU',
   'GIRL BAJU KEBAYA','GIRL BAJU KURUNG','BABY GIRL BAJU KURUNG'
 ];
 
@@ -661,8 +681,8 @@ function saveSetup() {
   toast('🔄 Menyambung...');
   loadFromSupabase(function(ok) {
     updateStatus();
-    if (ok) { toast('✅ Berjaya! Data dimuatkan.'); showPLSelect(); }
-    else { toast('⚠️ Gagal sambung. Semak URL/Key.'); }
+    if (ok) { toast('✅ Berjaya! Data diloadkan.'); showPLSelect(); }
+    else { toast('⚠️ Gagal connect. Semak URL/Key.'); }
   });
 }
 function skipSetup() {
@@ -678,7 +698,7 @@ function showSetup() {
 function backFromSetup() {
   if (selectedPLId) { showForm(); }
   else if (pls.length > 0) { showPLSelect(); }
-  else { toast('Sambung Supabase dulu untuk muat data.'); }
+  else { toast('Connect Supabase dulu for load data.'); }
 }
 
 // ══ STATUS ══
@@ -687,7 +707,7 @@ function updateStatus() {
   var lbl = document.getElementById('sb-label');
   var connected = !!(SB_URL && SB_KEY);
   if (dot) { dot.className = 'status-dot ' + (connected ? 'green' : 'red'); }
-  if (lbl) { lbl.textContent = connected ? '🟢 Supabase connected' : '🔴 Tidak connect'; }
+  if (lbl) { lbl.textContent = connected ? '🟢 Supabase connected' : '🔴 Not connected'; }
   var sub = document.getElementById('header-sub');
   if (sub) { sub.textContent = connected ? 'Supabase ✓' : 'Offline mode'; }
 }
@@ -719,7 +739,7 @@ function renderPLList() {
   var el = document.getElementById('pl-list-container');
   if (!el) return;
   if (pls.length === 0) {
-    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">Tiada PL. Buat dulu dari sistem utama.</p>';
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">No PL found. Create from the main system first.</p>';
     return;
   }
   el.innerHTML = pls.map(function(pl) {
@@ -730,7 +750,7 @@ function renderPLList() {
     return '<button class="pl-btn' + sel + '" onclick="selectPL(\'' + pl.id + '\')">'
       + '<div class="pl-btn-name">' + pl.name + '</div>'
       + '<div class="pl-btn-sub">' + (pl.invNo || '—') + ' &bull; ' + (pl.dest || '—') + '</div>'
-      + '<span class="pl-btn-badge">' + packed + ' karton diinput</span>'
+      + '<span class="pl-btn-badge">' + packed + ' cartons entered</span>'
       + '<div class="prog-bg" style="margin-top:8px"><div class="prog-fill" style="width:' + pct + '%"></div></div>'
       + '</button>';
   }).join('');
@@ -767,7 +787,7 @@ function initForm() {
 
 // ══ ITEM ROWS ══
 function itemOpts() {
-  return '<option value="">-- Pilih Item --</option>' + ITEMS.map(function(i){ return '<option value="' + i + '">' + i + '</option>'; }).join('');
+  return '<option value="">-- Select Item --</option>' + ITEMS.map(function(i){ return '<option value="' + i + '">' + i + '</option>'; }).join('');
 }
 function addItem(data) {
   data = data || {};
@@ -879,18 +899,18 @@ function getItemsData() {
 // ══ SUBMIT CARTON ══
 function submitCarton(doPrint) {
   var pl = getPL(selectedPLId);
-  if (!pl) { toast('⚠️ Pilih PL dulu!'); return; }
+  if (!pl) { toast('⚠️ Select PL dulu!'); return; }
   var boxNo = parseInt(v('f-boxno'));
-  if (!boxNo) { toast('⚠️ Masukkan Box No!'); return; }
+  if (!boxNo) { toast('⚠️ Enter Box No!'); return; }
 
   // Check duplicate
   if (pl.cartons.find(function(c){ return c.boxNo === boxNo; })) {
-    if (!confirm('Box ' + boxNo + ' dah ada. Replace?')) return;
+    if (!confirm('Box ' + boxNo + ' done ada. Replace?')) return;
     pl.cartons = pl.cartons.filter(function(c){ return c.boxNo !== boxNo; });
   }
 
   var items = getItemsData();
-  if (!items.length || !items[0].style) { toast('⚠️ Sila pilih Item Description!'); return; }
+  if (!items.length || !items[0].style) { toast('⚠️ Sila select Item Description!'); return; }
   var tPcs = items.reduce(function(s, it){ return s + it.pcs; }, 0);
 
   var carton = {
@@ -903,7 +923,7 @@ function submitCarton(doPrint) {
   pl.cartons.push(carton);
   pl.cartons.sort(function(a, b){ return a.boxNo - b.boxNo; });
   save();
-  toast('✅ Box ' + String(boxNo).padStart(3, '0') + ' disimpan!');
+  toast('✅ Box ' + String(boxNo).padStart(3, '0') + ' disave!');
   if (doPrint) printLabel(pl, carton);
   initForm(); // auto-increment & reset
   updateFormHeader();
@@ -914,10 +934,10 @@ function renderCartonList() {
   var pl = getPL(selectedPLId);
   if (!pl) return;
   document.getElementById('list-pl-name').textContent = pl.name;
-  document.getElementById('list-pl-sub').textContent = pl.cartons.length + ' karton diinput | ' + (pl.invNo || '') + ' | ' + (pl.dest || '');
+  document.getElementById('list-pl-sub').textContent = pl.cartons.length + ' cartons entered | ' + (pl.invNo || '') + ' | ' + (pl.dest || '');
   var el = document.getElementById('ctn-list-wrap');
   if (pl.cartons.length === 0) {
-    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">Tiada karton lagi.</p>';
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">No cartons yet.</p>';
     return;
   }
   var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
