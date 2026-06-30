@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ms">
 <head>
@@ -200,11 +201,13 @@ function finishLoading(plId) {
   if (!pl) return;
   pl.status = 'completed';
   pl.completedAt = new Date().toISOString();
+  selectedPLId = null;
+  localStorage.removeItem('selected_pl_id');
   save();
   syncToSupabase();
   stopVerifyScan();
   showToast('✅ PL marked as completed!');
-  renderVerifyList();
+  showHome();
 }
 
 function unscanVerify(ctnId) { delete scannedMap[ctnId]; saveScanned(); renderVerifyList(); }
@@ -232,6 +235,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;ba
 .header-sub{font-size:.72rem;opacity:.7;margin-top:1px}
 .btn-icon{background:rgba(255,255,255,.15);border:none;color:#fff;width:38px;height:38px;border-radius:50%;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .btn-icon:active{background:rgba(255,255,255,.3)}
+
+/* ── PULL TO REFRESH ── */
+#ptr-indicator{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:center;background:var(--blue);color:#fff;font-size:.82rem;font-weight:700;height:0;overflow:hidden;z-index:200;transition:height .2s;gap:8px}
+#ptr-indicator.show{height:44px}
+#ptr-spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── SCREEN MANAGEMENT ── */
 .screen{display:none;min-height:calc(100vh - 60px)}
@@ -393,6 +402,9 @@ if ('serviceWorker' in navigator) {
 </script>
 </head>
 <body>
+
+<!-- PULL TO REFRESH INDICATOR -->
+<div id="ptr-indicator"><div id="ptr-spinner"></div><span id="ptr-text">Release to refresh</span></div>
 
 <!-- HEADER -->
 <div class="header" id="main-header">
@@ -756,7 +768,11 @@ function syncNow() {
   if (el) { el.textContent = 'Sync: ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}); }
 }
 
-// showScreen defined below
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
 
 
 // ══ PL LIST ══
@@ -1135,6 +1151,7 @@ function goBack() { showHome(); }
 
 function updateHomeCards() {
   var pl = selectedPLId ? pls.find(function(p){ return p.id === selectedPLId; }) : null;
+  if (pl && pl.status === 'completed') { selectedPLId = null; localStorage.removeItem('selected_pl_id'); pl = null; }
   var infoEl = document.getElementById('home-pl-info');
   var noPlEl = document.getElementById('home-no-pl');
   if (pl) {
@@ -1235,6 +1252,61 @@ function save() {
   if (selectedPLId) localStorage.setItem('selected_pl_id', selectedPLId);
   syncToSupabase();
 }
+
+// ══ PULL TO REFRESH ══
+(function() {
+  var startY = 0, pulling = false, threshold = 70;
+  var indicator = null, ptrText = null;
+
+  function doRefresh() {
+    if (ptrText) ptrText.textContent = 'Refreshing...';
+    loadFromSupabase(function(ok) {
+      if (ok) {
+        var screen = document.querySelector('.screen.active');
+        if (screen) {
+          var id = screen.id;
+          if (id === 'screen-home') updateHomeCards();
+          if (id === 'screen-list') renderCartonList();
+          if (id === 'screen-verify') renderVerifyList();
+          if (id === 'screen-pl') renderPLList();
+        }
+        showToast('✅ Refreshed!');
+      } else {
+        showToast('⚠️ Refresh failed.');
+      }
+      if (indicator) indicator.classList.remove('show');
+      pulling = false;
+    });
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    if (window.scrollY === 0) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!pulling) return;
+    if (!indicator) { indicator = document.getElementById('ptr-indicator'); ptrText = document.getElementById('ptr-text'); }
+    var dist = e.touches[0].clientY - startY;
+    if (dist > 10 && window.scrollY === 0) {
+      indicator.classList.add('show');
+      ptrText.textContent = dist > threshold ? 'Release to refresh' : 'Pull down to refresh';
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function(e) {
+    if (!pulling) return;
+    var dist = (e.changedTouches[0].clientY - startY);
+    if (dist > threshold && window.scrollY === 0) {
+      doRefresh();
+    } else {
+      if (indicator) indicator.classList.remove('show');
+      pulling = false;
+    }
+  });
+})();
 
 // ══ WINDOW ONLOAD ══
 window.onload = function() {
