@@ -179,9 +179,32 @@ function renderVerifyList() {
       html += '</div>';
     });
   }
-  html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset All Scans</button>';
+  if (pl.status === 'completed') {
+    html += '<div style="margin-top:10px;padding:12px;background:#f0fdf4;border:2px solid #86efac;border-radius:10px;text-align:center">';
+    html += '<div style="font-size:1.2rem;font-weight:800;color:#16a34a">✅ Loading Completed</div>';
+    html += '<div style="font-size:.78rem;color:#555;margin-top:4px">This PL is locked. View only.</div>';
+    html += '</div>';
+  } else {
+    if (allDone) {
+      html += '<button onclick="finishLoading(\'' + pl.id + '\')" style="margin-top:10px;width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;letter-spacing:.3px">🏁 Finish Loading</button>';
+    }
+    html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset All Scans</button>';
+  }
   html += '</div>';
   el.innerHTML = html;
+}
+
+function finishLoading(plId) {
+  if (!confirm('Mark this PL as completed? No more edits will be allowed.')) return;
+  var pl = pls.find(function(p){ return p.id === plId; });
+  if (!pl) return;
+  pl.status = 'completed';
+  pl.completedAt = new Date().toISOString();
+  save();
+  syncToSupabase();
+  stopVerifyScan();
+  showToast('✅ PL marked as completed!');
+  renderVerifyList();
 }
 
 function unscanVerify(ctnId) { delete scannedMap[ctnId]; saveScanned(); renderVerifyList(); }
