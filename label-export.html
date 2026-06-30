@@ -2046,29 +2046,40 @@ function doRegister() {
   errEl.style.display = 'none'; okEl.style.display = 'none';
   if (!name || !username || !password) { errEl.textContent = '⚠️ Fill all fields.'; errEl.style.display=''; return; }
   if (password.length < 4) { errEl.textContent = '⚠️ Password min. 4 characters.'; errEl.style.display=''; return; }
-  if (users.find(function(u){ return u.username === username; })) { errEl.textContent = '❌ Username already taken.'; errEl.style.display=''; return; }
-  var isFirst = users.length === 0;
-  var newUser = {
-    id: Date.now().toString(36),
-    name: name,
-    username: username,
-    passwordHash: hashPwd(password),
-    plainPassword: isFirst ? null : password,
-    role: isFirst ? 'admin' : 'user',
-    status: isFirst ? 'approved' : 'pending',
-    createdAt: new Date().toISOString()
-  };
-  users.push(newUser);
-  saveUsersLocal();
-  syncUsers();
-  okEl.textContent = users.length === 1
-    ? '✅ Account created! You can now sign in.'
-    : '✅ Account created! Please wait for admin approval before signing in.';
-  okEl.style.display = '';
-  document.getElementById('reg-name').value = '';
-  document.getElementById('reg-username').value = '';
-  document.getElementById('reg-password').value = '';
-  setTimeout(function(){ switchAuthTab('login'); document.getElementById('login-username').value = username; }, 1500);
+
+  function _finishRegister() {
+    if (users.find(function(u){ return u.username === username; })) { errEl.textContent = '❌ Username already taken.'; errEl.style.display=''; return; }
+    var isFirst = users.length === 0;
+    var newUser = {
+      id: Date.now().toString(36),
+      name: name,
+      username: username,
+      passwordHash: hashPwd(password),
+      plainPassword: isFirst ? null : password,
+      role: isFirst ? 'admin' : 'user',
+      status: isFirst ? 'approved' : 'pending',
+      createdAt: new Date().toISOString()
+    };
+    users.push(newUser);
+    saveUsersLocal();
+    syncUsers();
+    okEl.textContent = users.length === 1
+      ? '✅ Account created! You can now sign in.'
+      : '✅ Account created! Please wait for admin approval before signing in.';
+    okEl.style.display = '';
+    document.getElementById('reg-name').value = '';
+    document.getElementById('reg-username').value = '';
+    document.getElementById('reg-password').value = '';
+    setTimeout(function(){ switchAuthTab('login'); document.getElementById('login-username').value = username; }, 1500);
+  }
+
+  // Load latest users from Supabase first so we don't overwrite existing users
+  if (SB_URL && SB_KEY) {
+    okEl.textContent = '⏳ Checking...'; okEl.style.display = '';
+    loadUsersFromSupabase(function(){ _finishRegister(); });
+  } else {
+    _finishRegister();
+  }
 }
 
 function showMainApp() {
