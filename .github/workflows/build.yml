@@ -13,6 +13,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
       - uses: android-actions/setup-android@v3
+      - name: Install ImageMagick
+        run: sudo apt-get install -y imagemagick
+      - name: Generate launcher icons
+        run: |
+          mkdir -p app/src/main/res/mipmap-mdpi
+          mkdir -p app/src/main/res/mipmap-hdpi
+          mkdir -p app/src/main/res/mipmap-xhdpi
+          mkdir -p app/src/main/res/mipmap-xxhdpi
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          convert Export-icon.png -resize 48x48 app/src/main/res/mipmap-mdpi/ic_launcher.png
+          convert Export-icon.png -resize 72x72 app/src/main/res/mipmap-hdpi/ic_launcher.png
+          convert Export-icon.png -resize 96x96 app/src/main/res/mipmap-xhdpi/ic_launcher.png
+          convert Export-icon.png -resize 144x144 app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+          convert Export-icon.png -resize 192x192 app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
       - name: Download Gradle wrapper jar
         run: wget -q "https://raw.githubusercontent.com/gradle/gradle/v8.2.1/gradle/wrapper/gradle-wrapper.jar" -O gradle/wrapper/gradle-wrapper.jar
       - run: chmod +x ./gradlew
