@@ -136,7 +136,7 @@ function processVerifyResult(text) {
     }
   });
   if (!foundPl || !foundC) { showToast('⚠️ Carton not found.'); return; }
-  scannedMap[foundC.id] = Date.now();
+  scannedMap[foundC.id] = { ts: Date.now(), by: workerName || '—' };
   saveScanned();
   renderVerifyList();
   showToast('✅ BOX ' + String(foundC.boxNo).padStart(3,'0') + ' — ' + (foundC.totalPcs||0) + ' PCS');
@@ -167,14 +167,20 @@ function renderVerifyList() {
   if (sorted.length === 0) { html += '<p style="text-align:center;color:#aaa;padding:12px">No cartons.</p>'; }
   else {
     sorted.forEach(function(c) {
-      var done = !!scannedMap[c.id];
+      var scanEntry = scannedMap[c.id];
+      var done = !!scanEntry;
+      // support old format (timestamp number) and new format ({ts, by})
+      var verifiedBy = done ? (typeof scanEntry === 'object' ? (scanEntry.by || '—') : '—') : '';
       var boxStr = String(c.boxNo).padStart(3,'0');
       var items = (c.items && c.items.length) ? c.items : [{ style: c.style||'', colour: c.colour||'', totalPcs: c.totalPcs||0 }];
       var styleStr = Array.from(new Set(items.map(function(it){ return it.style||''; }))).filter(Boolean).join(' / ');
       html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1.5px solid ' + (done ? '#86efac' : '#e5e7eb') + ';background:' + (done ? '#f0fdf4' : '#fafafa') + ';margin-bottom:7px">';
       html += '<span style="font-size:1.3rem">' + (done ? '✅' : '⬜') + '</span>';
       html += '<div style="flex:1"><div style="font-weight:800;font-size:.88rem">BOX ' + boxStr + ' <span style="font-weight:400;color:#666;font-size:.82rem">' + styleStr + '</span></div>';
-      html += '<div style="font-size:.75rem;color:#888">' + (c.totalPcs||0) + ' PCS</div></div>';
+      html += '<div style="font-size:.75rem;color:#888">' + (c.totalPcs||0) + ' PCS';
+      if (c.createdBy) html += ' &nbsp;·&nbsp; 📝 <b>' + c.createdBy + '</b>';
+      if (done && verifiedBy) html += ' &nbsp;·&nbsp; ✅ <b>' + verifiedBy + '</b>';
+      html += '</div></div>';
       if (done) html += '<button onclick="unscanVerify(\'' + c.id + '\')" style="border:none;background:none;color:#bbb;font-size:.8rem;cursor:pointer;padding:4px 8px">&#x2715;</button>';
       html += '</div>';
     });
@@ -1001,7 +1007,8 @@ function submitCarton(doPrint) {
       totalPcs: tPcs,
       weight: v('f-weight'),
       measure: v('f-measure'),
-      ts: new Date().toISOString()
+      ts: new Date().toISOString(),
+      createdBy: workerName || '—'
     };
     freshPL.cartons.push(carton);
     freshPL.cartons.sort(function(a,b){ return a.boxNo - b.boxNo; });
