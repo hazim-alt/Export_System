@@ -2064,7 +2064,7 @@ function doRegister() {
   if (password.length < 4) { errEl.textContent = '⚠️ Password min. 4 characters.'; errEl.style.display=''; return; }
 
   function _finishRegister() {
-    if (users.find(function(u){ return u.username === username; })) { errEl.textContent = '❌ Username already taken.'; errEl.style.display=''; return; }
+    if (users.find(function(u){ return u.username === username; })) { errEl.textContent = '❌ Username already taken.'; errEl.style.display=''; okEl.style.display='none'; return; }
     var isFirst = users.length === 0;
     var newUser = {
       id: Date.now().toString(36),
@@ -2094,7 +2094,10 @@ function doRegister() {
     okEl.textContent = '⏳ Checking...'; okEl.style.display = '';
     loadUsersFromSupabase(function(){ _finishRegister(); });
   } else {
-    _finishRegister();
+    errEl.textContent = '⚠️ Setup Supabase dulu sebelum register! Klik link Setup Supabase di bawah.';
+    errEl.style.display = '';
+    okEl.style.display = 'none';
+    return;
   }
 }
 
