@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ms">
 <head>
@@ -235,6 +236,9 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
       <div class="fg" style="margin-bottom:16px"><label>Password</label><div style="position:relative"><input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()" style="padding-right:42px;width:100%;box-sizing:border-box" /><button type="button" onclick="togglePwd('login-password',this)" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#8b949e;font-size:1.1rem;padding:0;line-height:1">👁</button></div></div>
       <div id="login-error" style="color:#f85149;font-size:.8rem;margin-bottom:10px;display:none"></div>
       <button class="btn btn-primary btn-full btn-lg" onclick="doLogin()">🔑 Sign In</button>
+      <div style="text-align:center;margin-top:14px">
+        <button onclick="showSheetSetupFromAuth()" style="background:none;border:none;color:#8b949e;font-size:.78rem;cursor:pointer;text-decoration:underline">⚙️ Setup Supabase (first time on new device)</button>
+      </div>
     </div>
     <!-- Register -->
     <div id="auth-register-form" style="display:none">
@@ -899,7 +903,7 @@ function saveSheetURL() {
     toast('Connecting to Supabase...');
     loadFromSheets(function(ok) {
       closeSheetSetup();
-      if (ok) { renderAll(); toast('Connected! Data loaded from Supabase.'); }
+      if (ok) { renderAll(); loadUsersFromSupabase(function(){}); toast('Connected! Data loaded from Supabase.'); }
       else toast('Connected. Data will sync on changes.');
     });
   } else {
@@ -930,6 +934,18 @@ function updateSheetStatus() {
   var keyInp = document.getElementById('gs-key-input');
   if (urlInp) urlInp.value = SB_URL;
   if (keyInp) keyInp.value = SB_KEY;
+}
+
+function showSheetSetupFromAuth() {
+  var modal = document.getElementById('modal-sheet-setup');
+  if (modal) {
+    var urlInp = document.getElementById('gs-url-input');
+    var keyInp = document.getElementById('gs-key-input');
+    if (urlInp) urlInp.value = SB_URL;
+    if (keyInp) keyInp.value = SB_KEY;
+    modal.style.display = 'flex';
+    modal.style.zIndex = '3000'; // above auth overlay
+  }
 }
 
 function showSheetSetup() {
