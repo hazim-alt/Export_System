@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ms">
 <head>
@@ -403,6 +402,26 @@ if ('serviceWorker' in navigator) {
 </head>
 <body>
 
+<!-- ════ SCREEN: LOGIN ════ -->
+<div class="screen active" id="screen-login">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:32px 24px;background:var(--bg)">
+    <div style="font-size:3.5rem;margin-bottom:8px">📦</div>
+    <div style="font-size:1.4rem;font-weight:900;color:var(--blue);margin-bottom:4px">Export System</div>
+    <div style="font-size:.82rem;color:#94a3b8;margin-bottom:32px">Warehouse Mobile App</div>
+    <div style="background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.1);padding:24px;width:100%;max-width:360px">
+      <div style="font-size:1rem;font-weight:800;color:#1e293b;margin-bottom:6px">👤 Enter Your Name</div>
+      <div style="font-size:.78rem;color:#64748b;margin-bottom:16px">Your name will be recorded for each activity.</div>
+      <input type="text" id="login-name-input" class="field-inp" placeholder="e.g. Ahmad, Siti, Ali..."
+        style="font-size:1.1rem;text-transform:uppercase;margin-bottom:16px"
+        oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter')submitLogin()" autocomplete="off" />
+      <button class="btn btn-primary" onclick="submitLogin()" style="width:100%;padding:14px;font-size:1rem;border-radius:12px">
+        ✅ Start Working
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- PULL TO REFRESH INDICATOR -->
 <div id="ptr-indicator"><div id="ptr-spinner"></div><span id="ptr-text">Release to refresh</span></div>
 
@@ -412,7 +431,10 @@ if ('serviceWorker' in navigator) {
     <div class="header-title">📦 Export System</div>
     <div class="header-sub" id="header-sub">Loading...</div>
   </div>
-  <button class="btn-icon" onclick="showSetup()" title="Setup Supabase">⚙️</button>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button class="btn-icon" onclick="showChangeName()" title="Change Name" id="btn-name" style="font-size:.75rem;width:auto;padding:0 10px;border-radius:20px;display:none">👤 <span id="header-worker-name"></span></button>
+    <button class="btn-icon" onclick="showSetup()" title="Setup Supabase">⚙️</button>
+  </div>
 </div>
 
 <!-- TOAST -->
@@ -1253,6 +1275,41 @@ function save() {
   syncToSupabase();
 }
 
+// ══ WORKER NAME / LOGIN ══
+var workerName = '';
+
+function submitLogin() {
+  var inp = document.getElementById('login-name-input');
+  var name = inp ? inp.value.trim() : '';
+  if (!name) { showToast('⚠️ Please enter your name!'); return; }
+  workerName = name.toUpperCase();
+  localStorage.setItem('worker_name', workerName);
+  updateWorkerNameUI();
+  // After login, proceed normally
+  if (!SB_URL && !SB_KEY) {
+    showSetup();
+  } else {
+    showHome();
+  }
+}
+
+function showChangeName() {
+  var newName = prompt('Enter your name:', workerName);
+  if (newName && newName.trim()) {
+    workerName = newName.trim().toUpperCase();
+    localStorage.setItem('worker_name', workerName);
+    updateWorkerNameUI();
+    showToast('✅ Name updated: ' + workerName);
+  }
+}
+
+function updateWorkerNameUI() {
+  var nameEl = document.getElementById('header-worker-name');
+  var btnName = document.getElementById('btn-name');
+  if (nameEl) nameEl.textContent = workerName;
+  if (btnName) btnName.style.display = workerName ? '' : 'none';
+}
+
 // ══ PULL TO REFRESH ══
 (function() {
   var startY = 0, pulling = false, threshold = 70;
@@ -1311,13 +1368,20 @@ function save() {
 // ══ WINDOW ONLOAD ══
 window.onload = function() {
   load();
+  workerName = localStorage.getItem('worker_name') || '';
+  updateWorkerNameUI();
   if (SB_URL && SB_KEY) {
     loadFromSupabase(function(ok) {
       if (ok) showToast('Data loaded.');
     });
   }
   updateStatus();
-  if (!SB_URL && !SB_KEY) {
+  // If no name saved, show login screen first
+  if (!workerName) {
+    showScreen('screen-login');
+    var inp = document.getElementById('login-name-input');
+    if (inp) setTimeout(function(){ inp.focus(); }, 300);
+  } else if (!SB_URL && !SB_KEY) {
     showSetup();
   } else {
     showHome();
