@@ -674,20 +674,20 @@ function loadFromSupabase(cb) {
 function saveSetup() {
   var url = document.getElementById('setup-url').value.trim().replace(/\/$/, '');
   var key = document.getElementById('setup-key').value.trim();
-  if (!url || !key) { toast('⚠️ Sila isi URL dan Key!'); return; }
+  if (!url || !key) { showToast('⚠️ Sila isi URL dan Key!'); return; }
   SB_URL = url; SB_KEY = key;
   localStorage.setItem('sb_url', SB_URL);
   localStorage.setItem('sb_key', SB_KEY);
-  toast('🔄 Menyambung...');
+  showToast('🔄 Menyambung...');
   loadFromSupabase(function(ok) {
     updateStatus();
-    if (ok) { toast('✅ Berjaya! Data diloadkan.'); showPLSelect(); }
-    else { toast('⚠️ Gagal connect. Semak URL/Key.'); }
+    if (ok) { showToast('✅ Berjaya! Data diloadkan.'); showPLSelect(); }
+    else { showToast('⚠️ Gagal connect. Semak URL/Key.'); }
   });
 }
 function skipSetup() {
   if (pls.length > 0) showHome();
-  else { toast('Tiada data tempatan.'); }
+  else { showToast('Tiada data tempatan.'); }
 }
 function showSetup() {
   document.getElementById('setup-url').value = SB_URL;
@@ -698,7 +698,7 @@ function showSetup() {
 function backFromSetup() {
   if (selectedPLId) { showForm(); }
   else if (pls.length > 0) { showPLSelect(); }
-  else { toast('Connect Supabase dulu for load data.'); }
+  else { showToast('Connect Supabase dulu for load data.'); }
 }
 
 // ══ STATUS ══
@@ -712,10 +712,10 @@ function updateStatus() {
   if (sub) { sub.textContent = connected ? 'Supabase ✓' : 'Offline mode'; }
 }
 function syncNow() {
-  if (!SB_URL || !SB_KEY) { toast('⚠️ Belum setup Supabase.'); return; }
-  toast('🔄 Syncing...');
+  if (!SB_URL || !SB_KEY) { showToast('⚠️ Belum setup Supabase.'); return; }
+  showToast('🔄 Syncing...');
   loadFromSupabase(function(ok) {
-    if (ok) { renderPLList(); toast('✅ Data terkini!'); } else { toast('❌ Gagal sync.'); }
+    if (ok) { renderPLList(); showToast('✅ Data terkini!'); } else { showToast('❌ Gagal sync.'); }
   });
   var el = document.getElementById('last-sync');
   if (el) { el.textContent = 'Sync: ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}); }
