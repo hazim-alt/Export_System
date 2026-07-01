@@ -1208,7 +1208,8 @@ function saveCarton(doPrint) {
   const carton = {
     id: editId || uid(), boxNo, items,
     totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
-    ts: new Date().toISOString()
+    ts: new Date().toISOString(),
+    createdBy: editId ? undefined : (currentUser ? currentUser.name : '—')
   };
   if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
   else pl.cartons.push(carton);
@@ -1325,7 +1326,8 @@ function mobileSubmit(doPrint) {
   const carton = {
     id: uid(), boxNo, items,
     totalPcs: tPcs, weight: v('f-weight'), measure: (v('f-measure')||'').replace(/[X*]/g,'x'),
-    ts: new Date().toISOString()
+    ts: new Date().toISOString(),
+    createdBy: currentUser ? currentUser.name : '—'
   };
   pl.cartons.push(carton);
   pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
@@ -1480,6 +1482,16 @@ function dashCartonRow(c) {
     + '<td style="color:' + verColor + ';font-size:.75rem;font-weight:700">' + verifiedBy + '</td></tr>';
 }
 
+var _dashExpanded = {};
+
+function toggleDashPL(id) {
+  _dashExpanded[id] = !_dashExpanded[id];
+  var body = document.getElementById('dash-body-' + id);
+  var arrow = document.getElementById('dash-arrow-' + id);
+  if (body) body.style.display = _dashExpanded[id] ? '' : 'none';
+  if (arrow) arrow.textContent = _dashExpanded[id] ? '▲' : '▼';
+}
+
 function renderDash() {
   const totalPacked = pls.reduce((s,pl) => s + pl.cartons.length, 0);
   const totalExpected = pls.reduce((s,pl) => s + (pl.total||0), 0);
@@ -1492,16 +1504,19 @@ function renderDash() {
     const packed = pl.cartons.length;
     const total = pl.total || packed;
     const pct = total > 0 ? Math.round(packed/total*100) : 0;
+    const isOpen = !!_dashExpanded[pl.id];
     const noRows = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:12px">No cartons</td></tr>';
-    const rows = packed === 0 ? noRows : pl.cartons.slice(-5).map(dashCartonRow).join('');
-    const extra = packed > 5 ? '<div style="text-align:center;font-size:.75rem;color:#888;padding:6px">+ ' + (packed-5) + ' more cartons</div>' : '';
+    const rows = packed === 0 ? noRows : pl.cartons.map(dashCartonRow).join('');
     return '<div class="card" style="margin-bottom:12px">'
-      + '<div style="font-weight:800;color:var(--blue);font-size:.95rem;margin-bottom:4px">' + pl.name + '</div>'
+      + '<div onclick="toggleDashPL(\'' + pl.id + '\')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+      + '<div style="font-weight:800;color:var(--blue);font-size:.95rem">' + pl.name + '</div>'
+      + '<span id="dash-arrow-' + pl.id + '" style="color:#8b949e;font-size:.75rem;user-select:none">' + (isOpen ? '▲' : '▼') + '</span>'
+      + '</div>'
       + '<div style="font-size:.78rem;color:#888;margin-bottom:8px">' + (pl.invNo||'') + ' | ' + (pl.dest||'') + ' | ' + packed + '/' + total + ' CTN (' + pct + '%)</div>'
       + '<div class="prog-bar-bg"><div class="prog-bar" style="width:' + pct + '%"></div></div>'
-      + '<div style="margin-top:10px;overflow-x:auto">'
+      + '<div id="dash-body-' + pl.id + '" style="display:' + (isOpen ? '' : 'none') + ';margin-top:10px;overflow-x:auto">'
       + '<table class="tbl"><thead><tr><th>Box No</th><th>Style</th><th>Color</th><th>Size</th><th>Total PCS</th><th>Time</th><th>Created By</th><th>Verified By</th></tr></thead>'
-      + '<tbody>' + rows + '</tbody></table>' + extra + '</div></div>';
+      + '<tbody>' + rows + '</tbody></table></div></div>';
   }).join('');
 }
 
@@ -1592,22 +1607,22 @@ function buildPLDoc(pl) {
   // Total item rows (for container rowspan)
   var totalItemRows = sorted.reduce(function(s,c){ return s+getCartonItems(c).length; }, 0);
 
-  var TH = 'border:1.5px solid #444;padding:4px 5px;background:#b8d4f0;font-size:.7rem;text-align:center;vertical-align:middle;font-weight:700;';
-  var TD = 'border:1px solid #bbb;padding:3px 5px;font-size:.74rem;vertical-align:middle;background:white;color:#111;';
-  var TDB = 'border:1.5px solid #444;padding:3px 5px;font-size:.74rem;font-weight:800;text-align:center;vertical-align:middle;background:white;color:#111;';
+  var TH = 'border:1px solid #333;padding:3px 3px;background:#b8d4f0;font-size:.62rem;text-align:center;vertical-align:middle;font-weight:700;';
+  var TD = 'border:1px solid #333;padding:2px 3px;font-size:.66rem;vertical-align:middle;background:white;color:#111;';
+  var TDB = 'border:1px solid #333;padding:2px 3px;font-size:.66rem;font-weight:800;text-align:center;vertical-align:middle;background:white;color:#111;';
 
   var thead = '<thead>'
     + '<tr>'
-    + '<th rowspan="2" style="'+TH+'width:75px">容器和封条编号<br><span style="font-size:.65rem">CONTAINER &amp; SEAL NO.</span></th>'
-    + '<th rowspan="2" style="'+TH+'width:38px">箱号<br>BOX NO.</th>'
-    + '<th rowspan="2" style="'+TH+'width:90px">款号<br>STYLE NO.</th>'
-    + '<th rowspan="2" style="'+TH+'width:32px">代码<br>CODE</th>'
-    + '<th rowspan="2" style="'+TH+'width:80px">颜色<br>COLOR</th>'
+    + '<th rowspan="2" style="'+TH+'width:60px">容器和封条编号<br><span style="font-size:.65rem">CONTAINER &amp; SEAL NO.</span></th>'
+    + '<th rowspan="2" style="'+TH+'width:30px">箱号<br>BOX NO.</th>'
+    + '<th rowspan="2" style="'+TH+'width:72px">款号<br>STYLE NO.</th>'
+    + '<th rowspan="2" style="'+TH+'width:26px">代码<br>CODE</th>'
+    + '<th rowspan="2" style="'+TH+'width:65px">颜色<br>COLOR</th>'
     + '<th colspan="'+SIZES.length+'" style="'+TH+'">尺寸<br>SIZE</th>'
-    + '<th rowspan="2" style="'+TH+'width:48px">合计<br>TOTAL (PCS)</th>'
-    + '<th rowspan="2" style="'+TH+'width:32px">箱数<br>CTN</th>'
-    + '<th rowspan="2" style="'+TH+'width:52px">重量<br>WEIGHT (KG)</th>'
-    + '<th rowspan="2" style="'+TH+'width:68px">纸箱规格<br>MEAS(CM)</th>'
+    + '<th rowspan="2" style="'+TH+'width:40px">合计<br>TOTAL (PCS)</th>'
+    + '<th rowspan="2" style="'+TH+'width:26px">箱数<br>CTN</th>'
+    + '<th rowspan="2" style="'+TH+'width:44px">重量<br>WEIGHT (KG)</th>'
+    + '<th rowspan="2" style="'+TH+'width:56px">纸箱规格<br>MEAS(CM)</th>'
     + '</tr>'
     + '<tr>' + SIZES.map(function(s){ return '<th style="'+TH+'width:30px;word-break:keep-all">'+s+'</th>'; }).join('') + '</tr>'
     + '</thead>';
@@ -1621,7 +1636,7 @@ function buildPLDoc(pl) {
     var bg = multi ? 'background:#fff3b0;' : '';
     items.forEach(function(it, idx) {
       var sz = it.sizes || {};
-      var szCells = SIZES.map(function(s){ return '<td style="'+TD+bg+'text-align:center">'+(sz[s]||'')+'</td>'; }).join('');
+      var szCells = SIZES.map(function(s){ return '<td style="'+TD+bg+'text-align:center">'+(sz[s]||'&nbsp;')+'</td>'; }).join('');
       if (idx === 0) {
         rows += '<tr>'
           + (firstCarton ? '<td rowspan="'+totalItemRows+'" style="'+TDB+'font-size:.68rem;background:#e8f0fe">'+(pl.container||'')+'</td>' : '')
@@ -1913,7 +1928,7 @@ function downloadPDF() {
     + '*{box-sizing:border-box;margin:0;padding:0;}'
     + 'body{font-family:Arial,sans-serif;font-size:.78rem;background:white;}'
     + '@media print{'
-    + '  @page{size:A4 portrait;margin:10mm 12mm;}'
+    + '  @page{size:A4 portrait;margin:8mm 6mm;}'
     + '  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}'
     + '}'
     + 'table{border-collapse:collapse;width:100%;}'
@@ -1927,55 +1942,132 @@ function downloadPDF() {
 
 // ══ DOWNLOAD EXCEL ══
 function downloadExcel() {
-  if (pls.length === 0) { toast('No data to export.'); return; }
-  if (typeof XLSX === 'undefined') { toast('Library Excel tidak load. Pastikan ada internet.'); return; }
+  var plId = document.getElementById('export-pl-select') ? document.getElementById('export-pl-select').value : '';
+  var plsToExport = plId ? pls.filter(function(p){ return p.id === plId; }) : pls;
+  if (plsToExport.length === 0) { toast('Pilih PL dulu!'); return; }
 
-  var wb = XLSX.utils.book_new();
+  var BDR = 'border:1px solid #333;';
+  var TH  = BDR+'background:#b8d4f0;font-weight:bold;text-align:center;padding:4px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
+  var TD  = BDR+'background:#fffacd;padding:3px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
+  var TDC = BDR+'background:#fffacd;padding:3px 4px;font-size:9pt;text-align:center;vertical-align:middle;font-family:Arial;';
+  var TDM = BDR+'background:#dce6f7;font-weight:bold;text-align:center;padding:3px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
+  var TOT = BDR+'background:#ffffff;font-weight:bold;text-align:center;padding:3px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
+  var GRN = BDR+'background:#d4edda;font-weight:bold;text-align:center;padding:4px 4px;font-size:9pt;font-family:Arial;';
+  var GRNL= BDR+'background:#d4edda;font-weight:bold;text-align:right;padding:4px 6px;font-size:9pt;font-family:Arial;';
+  var INFO= 'border:none;padding:3px 4px;font-size:9pt;font-family:Arial;';
 
-  pls.forEach(function(pl) {
-    var rows = [];
-    // Header rows (2-row bilingual header like template)
-    var h1 = ['容器和封条编号\nCONTAINER & SEAL NO.', '箱号\nBOX NO.', '款号\nSTYLE NO.', '代码\nCODE', '颜色\nCOLOR'];
-    SIZES.forEach(function(){ h1.push(''); });
-    h1[5] = '\u5c3a\u7801/SIZE';
-    SIZES.forEach(function(s){ h1.push(''); });
-    h1[5] = '尺码/SIZE';
-    h1.push('件数\nPCS', '总件数\nTOTAL PCS', '净重(KG)\nNET WEIGHT', '外箱尺寸(CM)\nDIMENSION');
-    rows.push(h1);
+  var html = '﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">';
+  html += '<head><meta charset="UTF-8"><style>table{border-collapse:collapse;}td,th{word-wrap:break-word;}</style></head><body>';
 
-    pl.cartons.forEach(function(c) {
+  plsToExport.forEach(function(pl, pIdx) {
+    var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo-b.boxNo; });
+    var grandPcs=0, grandGW=0;
+    var sizeTotals={}; SIZES.forEach(function(s){ sizeTotals[s]=0; });
+    if (pIdx>0) html += '<br><br>';
+
+    var nc = 5 + SIZES.length + 4;
+
+    html += '<table>';
+
+    // Title
+    html += '<tr><td colspan="'+nc+'" style="'+BDR+'text-align:center;font-size:14pt;font-weight:bold;padding:10px;background:#ffffff;font-family:Arial;">EXPORT PACKING LIST / 出口装箱单</td></tr>';
+
+    // Info rows
+    var invDate = pl.invDate || new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+    var half = Math.floor(nc/2);
+    var half2 = nc - half;
+    html += '<tr>'
+      + '<td colspan="'+half+'" style="'+INFO+'"><b>EXPORTER / 出口商:</b> '+(pl.exporter||'TBC')+'</td>'
+      + '<td colspan="'+half2+'" style="'+INFO+'"><b>INVOICE NO. / 发票号:</b> '+(pl.invNo||'')+'</td>'
+      + '</tr>';
+    html += '<tr>'
+      + '<td colspan="'+half+'" style="'+INFO+'"><b>CONSIGNEE / 收货人:</b> '+(pl.consignee||'TBC')+'</td>'
+      + '<td colspan="'+half2+'" style="'+INFO+'"><b>INVOICE DATE/ 发票日期 :</b> '+invDate+'</td>'
+      + '</tr>';
+    html += '<tr><td colspan="'+nc+'" style="'+INFO+'"><b>DESTINATION / 目的地:</b> '+(pl.dest||'TBC')+'</td></tr>';
+    html += '<tr><td colspan="'+nc+'" style="border:none;height:4px;"></td></tr>';
+
+    // Header
+    html += '<tr>'
+      + '<th rowspan="2" style="'+TH+'width:80pt">容器和封条编号<br>CONTAINER &amp; SEAL NO.</th>'
+      + '<th rowspan="2" style="'+TH+'width:35pt">箱号<br>BOX NO.</th>'
+      + '<th rowspan="2" style="'+TH+'width:70pt">款号<br>STYLE NO.</th>'
+      + '<th rowspan="2" style="'+TH+'width:28pt">代码<br>CODE</th>'
+      + '<th rowspan="2" style="'+TH+'width:60pt">颜色<br>COLOR</th>'
+      + '<th colspan="'+SIZES.length+'" style="'+TH+'">尺寸<br>SIZE</th>'
+      + '<th rowspan="2" style="'+TH+'width:40pt">合计<br>TOTAL (PCS)</th>'
+      + '<th rowspan="2" style="'+TH+'width:28pt">箱数<br>CTN</th>'
+      + '<th rowspan="2" style="'+TH+'width:44pt">重量<br>WEIGHT (KG)</th>'
+      + '<th rowspan="2" style="'+TH+'width:56pt">纸箱规格<br>MEAS(CM)</th>'
+      + '</tr><tr>';
+    SIZES.forEach(function(s){ html += '<th style="'+TH+'width:22pt">'+s+'</th>'; });
+    html += '</tr>';
+
+    // Data rows
+    sorted.forEach(function(c){
       var items = getCartonItems(c);
-      items.forEach(function(it, idx) {
-        var row = [];
-        if (idx === 0) {
-          row.push(pl.container||'', String(c.boxNo).padStart(3,'0'));
-        } else {
-          row.push('', '');
-        }
-        row.push(it.style||'', it.colorCode||'', it.colorName||'');
-        SIZES.forEach(function(s){ row.push(it.sizes?.[s]||0); });
-        row.push(it.pcs||0);
-        if (idx === 0) {
-          row.push(c.totalPcs||0, c.weight||'', c.measure||'');
-        } else {
-          row.push('','','');
-        }
-        rows.push(row);
+      var rs = items.length || 1;
+      items.forEach(function(it){
+        SIZES.forEach(function(s){ sizeTotals[s] += (it.sizes&&it.sizes[s])||0; });
       });
+      items.forEach(function(it, idx){
+        html += '<tr>';
+        if (idx===0) {
+          html += '<td rowspan="'+rs+'" style="'+TDM+'">'+(pl.container||'')+'</td>';
+          html += '<td rowspan="'+rs+'" style="'+TDM+'">'+String(c.boxNo).padStart(3,'0')+'</td>';
+        }
+        html += '<td style="'+TD+'">'+(it.style||'')+'</td>';
+        html += '<td style="'+TDC+'">'+(it.colorCode||'')+'</td>';
+        html += '<td style="'+TD+'">'+(it.colorName||'')+'</td>';
+        SIZES.forEach(function(s){
+          var v=(it.sizes&&it.sizes[s])||0;
+          html += '<td style="'+TDC+'">'+(v||'')+'</td>';
+        });
+        if (idx===0) {
+          html += '<td rowspan="'+rs+'" style="'+TOT+'">'+(c.totalPcs||0)+'</td>';
+          html += '<td rowspan="'+rs+'" style="'+TOT+'">1</td>';
+          html += '<td rowspan="'+rs+'" style="'+TOT+'">'+(c.weight||'')+'</td>';
+          html += '<td rowspan="'+rs+'" style="'+TOT+'">'+(c.measure||'')+'</td>';
+        }
+        html += '</tr>';
+      });
+      grandPcs += (c.totalPcs||0);
+      grandGW += parseFloat(c.weight)||0;
     });
 
-    var ws = XLSX.utils.aoa_to_sheet(rows);
-    var sheetName = pl.name.substring(0,31).replace(/[\\\/\?\*\[\]]/g,'');
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    // Total row
+    html += '<tr>';
+    html += '<td colspan="5" style="'+GRNL+'">TOTAL / 总计</td>';
+    SIZES.forEach(function(s){ html += '<td style="'+GRN+'">'+(sizeTotals[s]||'')+'</td>'; });
+    html += '<td style="'+GRN+'">'+grandPcs+'</td>';
+    html += '<td style="'+GRN+'">'+sorted.length+'</td>';
+    html += '<td style="'+GRN+'">'+grandGW.toFixed(2)+'</td>';
+    html += '<td style="'+GRN+'"></td>';
+    html += '</tr></table>';
+
+    // Summary
+    var cbm=sorted.reduce(function(s,c){var m=(c.measure||'').split(/[xX]/);if(m.length===3){var v=parseFloat(m[0])*parseFloat(m[1])*parseFloat(m[2])/1000000;return s+(isNaN(v)?0:v);}return s;},0);
+    var SUM = BDR+'background:#b8d4f0;font-weight:bold;padding:5px 8px;font-size:9pt;font-family:Arial;width:120pt;';
+    var SUMV= BDR+'font-weight:bold;padding:5px 10px;font-size:9pt;font-family:Arial;width:80pt;';
+    html += '<br><table style="border-collapse:collapse">';
+    html += '<tr><td style="'+SUM+'">NO OF CTN :</td><td style="'+SUMV+'">'+sorted.length+' CTN</td></tr>';
+    html += '<tr><td style="'+SUM+'">GROSS WEIGHT (KGS) :</td><td style="'+SUMV+'">'+grandGW.toFixed(2)+'</td></tr>';
+    html += '<tr><td style="'+SUM+'">MEASUREMENT (CBM):</td><td style="'+SUMV+'">'+cbm.toFixed(2)+'</td></tr>';
+    html += '</table>';
   });
 
-  var today = new Date();
-  var dd = String(today.getDate()).padStart(2,'0');
-  var mm = String(today.getMonth()+1).padStart(2,'0');
-  var yyyy = today.getFullYear();
-  XLSX.writeFile(wb, 'packing_report_' + yyyy + mm + dd + '.xlsx');
+  html += '</body></html>';
+  var blob = new Blob([html], {type:'application/vnd.ms-excel;charset=utf-8'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  var t=new Date(), d=String(t.getDate()).padStart(2,'0'), m=String(t.getMonth()+1).padStart(2,'0');
+  var fname = plsToExport.length===1 ? plsToExport[0].name : 'packing_report';
+  a.href=url; a.download=fname+'_'+t.getFullYear()+m+d+'.xls';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); },1000);
   toast('Excel downloaded!');
 }
+
 
 // ══ AUTH ══
 var users = [];
@@ -2243,53 +2335,39 @@ function showAuthScreen() {
 }
 
 function checkSession() {
+  var stored = sessionStorage.getItem('current_user');
+  if (!stored) return false;
   try {
-    var saved = sessionStorage.getItem('current_user');
-    if (saved) { currentUser = JSON.parse(saved); return true; }
-  } catch(e) {}
-  return false;
+    var u = JSON.parse(stored);
+    var found = users.find(function(x){ return x.id === u.id; });
+    if (!found) return false;
+    currentUser = found;
+    return true;
+  } catch(e) { return false; }
 }
 
-// ══ AUTO SYNC ══
-var autoSyncLastHash = '';
-function autoSyncTick() {
-  if (!SB_URL || !SB_KEY) return;
-  loadUsersFromSupabase(function(){ updatePendingBadge(); });
-  loadFromSheets(function(ok) {
-    if (!ok) return;
-    var hash = JSON.stringify(pls);
-    if (hash !== autoSyncLastHash) {
-      autoSyncLastHash = hash;
-      renderAll();
-      updateSheetStatus();
-    }
-  });
+function showSheetSetupFromAuth() {
+  document.getElementById('auth-overlay').style.display = 'none';
+  document.getElementById('sheet-setup-modal').style.display = 'flex';
 }
 
 window.onload = function() {
-  load();
-  loadUsers();
-  updateSheetStatus();
-
+  load(); loadUsers(); updateSheetStatus();
   function _showAuthOrMain() {
     if (checkSession()) { showMainApp(); }
     else { showAuthScreen(); switchAuthTab('login'); }
   }
-
   if (SB_URL && SB_KEY) {
     loadUsersFromSupabase(function() {
       loadFromSheets(function(ok) {
-        clearItemRows('modal');
-        renderAll();
+        clearItemRows('modal'); renderAll();
         if (ok) toast('Data loaded from Supabase.');
         autoSyncLastHash = JSON.stringify(pls);
       });
       _showAuthOrMain();
     });
   } else {
-    clearItemRows('modal');
-    renderAll();
-    _showAuthOrMain();
+    clearItemRows('modal'); renderAll(); _showAuthOrMain();
   }
   setInterval(autoSyncTick, 15000);
 };
