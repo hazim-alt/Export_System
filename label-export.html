@@ -1091,7 +1091,7 @@ function openCartonList(plId) {
     + '<div style="font-size:.75rem;color:#888">' + pl.cartons.length + ' cartons | ' + (pl.dest||'') + '</div></div>'
     + '<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">'
     + '<button class="btn btn-grey" onclick="toggleAllCartons()" id="chk-all-btn">☑ Select All</button>'
-    + '<button class="btn btn-grey" style="font-size:.7rem;opacity:.6" id="test-day-btn" onclick="testDayToggle(\'' + plId + '\')" title="Test daily sort">🧪 Test Daily</button>'
+    + (currentUser && currentUser.role === 'admin' ? '<button class="btn btn-grey" style="font-size:.7rem;opacity:.6" id="test-day-btn" onclick="testDayToggle(\'' + plId + '\')" title="Test daily sort">🧪 Test Daily</button>' : '')
     + '<button class="btn btn-primary" onclick="printSelectedLabels(\'' + plId + '\')">🖨️ Print Selected</button>'
     + '<button class="btn btn-green" onclick="openAddCarton(\'' + plId + '\')">+ Add Carton</button>'
     + '</div></div>'
@@ -1150,7 +1150,8 @@ function openAddCarton(plId) {
   document.getElementById('ctn-edit-id').value = '';
   document.getElementById('modal-ctn-title').textContent = `📦 Add Carton — ${pl.name}`;
   const nextBox = pl.cartons.length > 0 ? Math.max(...pl.cartons.map(c=>c.boxNo)) + 1 : 1;
-  document.getElementById('ctn-refno').value = '';
+  var nextRef = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) + 1 : 1;
+  document.getElementById('ctn-refno').value = String(nextRef);
   var cwEl=document.getElementById('ctn-weight'); if(cwEl) cwEl.value='';
   var cmEl=document.getElementById('ctn-measure'); if(cmEl) cmEl.value='72x46x31.5';
   clearItemRows('modal');
