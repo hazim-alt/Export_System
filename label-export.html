@@ -322,8 +322,8 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
 
     <div class="g2" style="margin-bottom:12px">
       <div class="fg">
-        <label>Box No. *</label>
-        <input type="number" id="ctn-boxno" placeholder="1" min="1" inputmode="numeric" />
+        <label>Ref No.</label>
+        <input type="text" id="ctn-refno" placeholder="e.g. KFA-001" />
       </div>
     </div>
 
@@ -343,7 +343,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
       </div>
       <div class="fg">
         <label>Measure (cm)</label>
-        <input type="text" id="ctn-measure" placeholder="72x46x31.5" oninput="this.value=this.value.replace(/[X*]/g,'x')" />
+        <input type="text" id="ctn-measure" placeholder="72x46x31.5" value="72x46x31.5" oninput="this.value=this.value.replace(/[X*]/g,'x')" />
       </div>
     </div>
     <div class="btn-row">
@@ -403,9 +403,6 @@ alter table export_data disable row level security;</code>
     <button class="s-btn active" data-page="pl" onclick="go('pl')">
       <span class="s-icon">📋</span>Packing Lists
     </button>
-    <button class="s-btn" data-page="input" onclick="go('input')">
-      <span class="s-icon">✏️</span>Input Carton
-    </button>
     <button class="s-btn" data-page="dash" onclick="go('dash')">
       <span class="s-icon">📊</span>Dashboard
     </button>
@@ -463,72 +460,6 @@ alter table export_data disable row level security;</code>
 </div>
 
 <!-- ════ PAGE: INPUT KARTON (Mobile) ════ -->
-<div class="page" id="page-input">
-  <div class="mobile-form">
-
-    <!-- Step 1: Choose PL -->
-    <div id="input-step1">
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-title">📋 Select Packing List</div>
-        <div id="pl-select-list">
-          <p style="color:var(--text-muted);text-align:center;padding:16px">No PLs yet. Create one from the "Packing Lists" tab.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 2: Input Form -->
-    <div id="input-step2" style="display:none">
-      <button onclick="go('pl')" style="border:none;background:none;color:var(--blue);font-weight:700;font-size:.88rem;padding:0 0 12px 0;cursor:pointer;display:flex;align-items:center;gap:5px">← Back</button>
-      <div class="card" style="text-align:center;padding:12px 16px;margin-bottom:12px;">
-        <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Packing List</div>
-        <div style="font-size:1.1rem;font-weight:900;color:var(--blue)" id="selected-pl-name">—</div>
-        <div style="font-size:.75rem;color:var(--text-muted)" id="selected-pl-sub">—</div>
-        <div style="margin-top:8px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:.75rem;font-weight:700;color:var(--green)" id="selected-pl-progress">0 cartons packed</span>
-          <button class="btn btn-ghost" style="padding:4px 10px;font-size:.75rem" onclick="changePL()">Tukar PL</button>
-        </div>
-      </div>
-
-      <div class="card" style="text-align:center;padding:10px 16px;margin-bottom:12px;">
-        <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase">Box No. Seterusnya</div>
-        <div style="font-size:2.8rem;font-weight:900;color:var(--blue);line-height:1.1" id="next-box-display">—</div>
-        <div style="font-size:.72rem;color:var(--text-muted)" id="total-box-display">of — cartons</div>
-      </div>
-
-      <div class="field-card">
-        <div class="field-lbl">Box No. *</div>
-        <input type="number" class="field-inp" id="f-boxno" placeholder="001" min="1" inputmode="numeric" style="font-size:1.8rem" />
-      </div>
-
-      <!-- Dynamic mobile item rows -->
-      <div id="mobile-items"></div>
-      <button class="m-add-item-btn" onclick="addItemRow('mobile')">+ Add Another Item</button>
-
-      <div class="field-card" style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:.75rem;font-weight:800;color:#555;text-transform:uppercase">GRAND TOTAL PCS</span>
-          <span style="font-size:1.6rem;font-weight:900;color:var(--blue)" id="mobile-grand-total">0</span>
-        </div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-        <div class="field-card" style="margin-bottom:0">
-          <div class="field-lbl">Weight (KG)</div>
-          <input type="text" class="field-inp" id="f-weight" placeholder="32.5" inputmode="decimal" style="font-size:1.3rem" />
-        </div>
-        <div class="field-card" style="margin-bottom:0">
-          <div class="field-lbl">Measure (cm)</div>
-          <input type="text" class="field-inp" id="f-measure" placeholder="72x46x31.5" style="font-size:1rem" oninput="this.value=this.value.replace(/[X*]/g,'x')" />
-        </div>
-      </div>
-
-      <button class="submit-big" onclick="mobileSubmit(false)">✅ COMPLETE</button>
-
-    </div>
-
-  </div>
-</div>
-
 <!-- ════ PAGE: DASHBOARD ════ -->
 <div class="page" id="page-dash">
   <div class="stats">
@@ -557,6 +488,7 @@ alter table export_data disable row level security;</code>
         <option value="">-- Select PL --</option>
       </select>
     </div>
+
     <div class="btn-row">
       <button class="btn btn-primary btn-lg" onclick="printPLDoc()">🖨️ Print Packing List</button>
       <button class="btn btn-ghost btn-lg" style="background:#e8f5e9;color:#1b5e20" onclick="downloadExcel()">📊 Download Excel</button>
@@ -961,17 +893,17 @@ function go(page) {
   if (page !== 'scan') stopScan();
   document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
   document.querySelectorAll('.s-btn[data-page]').forEach(function(b){ b.classList.remove('active'); });
-  document.getElementById('page-' + page).classList.add('active');
+  var pageEl = document.getElementById('page-' + page); if (pageEl) pageEl.classList.add('active');
   var sbtn = document.querySelector('.s-btn[data-page="' + page + '"]');
   if (sbtn) sbtn.classList.add('active');
-  var titles = {pl:'Packing Lists', input:'Input Carton', dash:'Dashboard', export:'Export PL', scan:'Loading Verify', users:'User Management'};
+  var titles = {pl:'Packing Lists', dash:'Dashboard', export:'Export PL', scan:'Loading Verify', users:'User Management'};
   if (page === 'users') { renderUsersPage(); }
   var pt = document.getElementById('page-title');
   if (pt) pt.textContent = titles[page] || '';
   var newPlBtn = document.getElementById('topbar-new-pl');
   if (newPlBtn) newPlBtn.style.display = page === 'pl' ? '' : 'none';
   if (page === 'pl') renderPLList();
-  if (page === 'input') { renderInputPLSelect(); if (selectedPLId) showInputForm(); }
+
   if (page === 'dash') renderDash();
   if (page === 'export') { renderExportSelect(); renderExportPreview(); }
   if (page === 'scan') { initScanPage(); setScanMode(scanMode); }
@@ -1109,12 +1041,21 @@ function openCartonList(plId) {
   if (pl.cartons.length === 0) {
     rows = '<tr><td colspan="18" style="text-align:center;color:#aaa;padding:20px">No cartons yet</td></tr>';
   } else {
-    pl.cartons.forEach(function(c) {
+    var sortedList = pl.cartons.slice().sort(function(a,b){
+      var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+      if (ad !== bd) return ad.localeCompare(bd);
+      var ai = getCartonItems(a), bi = getCartonItems(b);
+      var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+      var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+      return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+    });
+    sortedList.forEach(function(c, cIdx) {
       var items = getCartonItems(c);
-      var boxStr = String(c.boxNo).padStart(3,'0');
+      var boxStr = String(cIdx + 1).padStart(3,'0');
       items.forEach(function(it, idx) {
         var sizesCells = SIZES.map(function(s){ return '<td style="text-align:center">' + (it.sizes?.[s]||'') + '</td>'; }).join('');
         var boxCell = '';
+        var refCell = '';
         var weightMeasureCells = '';
         if (idx === 0) {
           boxCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;font-weight:800;background:var(--card-bg);text-align:center">'
@@ -1126,11 +1067,13 @@ function openCartonList(plId) {
             + (pl.status !== 'completed' ? '<button class="btn btn-primary" style="padding:3px 7px;font-size:.68rem" onclick="editCarton(\'' + plId + '\',\'' + c.id + '\')">✏️</button>' : '')
             + (pl.status !== 'completed' ? '<button class="btn btn-red" style="padding:3px 7px;font-size:.68rem" onclick="deleteCarton(\'' + plId + '\',\'' + c.id + '\')">✕</button>' : '')
             + '</div></td>';
+          refCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;text-align:center;color:#aaa;font-size:.8rem">' + (c.refNo||'—') + '</td>';
           weightMeasureCells = '<td rowspan="' + items.length + '" style="vertical-align:middle">' + (c.weight||'—') + '</td>'
             + '<td rowspan="' + items.length + '" style="vertical-align:middle">' + (c.measure||'—') + '</td>';
         }
         rows += '<tr>'
           + boxCell
+          + refCell
           + '<td>' + (it.style||'—') + '</td>'
           + '<td>' + (it.colorCode||'—') + '</td>'
           + '<td>' + (it.colorName||'—') + '</td>'
@@ -1148,15 +1091,33 @@ function openCartonList(plId) {
     + '<div style="font-size:.75rem;color:#888">' + pl.cartons.length + ' cartons | ' + (pl.dest||'') + '</div></div>'
     + '<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">'
     + '<button class="btn btn-grey" onclick="toggleAllCartons()" id="chk-all-btn">☑ Select All</button>'
+    + '<button class="btn btn-grey" style="font-size:.7rem;opacity:.6" id="test-day-btn" onclick="testDayToggle(\'' + plId + '\')" title="Test daily sort">🧪 Test Daily</button>'
     + '<button class="btn btn-primary" onclick="printSelectedLabels(\'' + plId + '\')">🖨️ Print Selected</button>'
     + '<button class="btn btn-green" onclick="openAddCarton(\'' + plId + '\')">+ Add Carton</button>'
     + '</div></div>'
     + '<div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">'
     + '<table class="tbl"><thead><tr>'
-    + '<th>Box No</th><th>Style</th><th>Color Code</th><th>Color Name</th>'
+    + '<th>Box No</th><th>Ref No</th><th>Style</th><th>Color Code</th><th>Color Name</th>'
     + SIZES.map(function(s){ return '<th>' + s + '</th>'; }).join('')
     + '<th>PCS</th><th>Weight</th><th>Measure</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+var _testDayActive = false;
+function testDayToggle(plId) {
+  var pl = getPL(plId); if (!pl || pl.cartons.length === 0) return;
+  if (!_testDayActive) {
+    var yesterday = new Date(Date.now() - 86400000).toISOString();
+    pl.cartons.forEach(function(c) { c.ts = yesterday; });
+    _testDayActive = true;
+    toast('🧪 Semua ' + pl.cartons.length + ' carton set ke semalam. Tambah carton baru untuk test, tekan lagi untuk reset.');
+  } else {
+    var now = new Date().toISOString();
+    pl.cartons.forEach(function(c) { c.ts = now; });
+    _testDayActive = false;
+    toast('✅ Reset — semua carton balik ke hari ini.');
+  }
+  save(); openCartonList(plId);
 }
 
 function toggleAllCartons() {
@@ -1176,7 +1137,7 @@ function printSelectedLabels(plId) {
   var pages = '';
   for (var i = 0; i < slots.length; i += 2) {
     var L = slots[i], R = slots[i+1] || slots[i];
-    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText) + '<div class="cut-line"></div>' + buildLabelCol(R.fields, R.itemCount, R.qrText) + '</div>';
+    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText, L.refNo) + '<div class="cut-line"></div>' + buildLabelCol(R.fields, R.itemCount, R.qrText, R.refNo) + '</div>';
   }
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
@@ -1189,7 +1150,7 @@ function openAddCarton(plId) {
   document.getElementById('ctn-edit-id').value = '';
   document.getElementById('modal-ctn-title').textContent = `📦 Add Carton — ${pl.name}`;
   const nextBox = pl.cartons.length > 0 ? Math.max(...pl.cartons.map(c=>c.boxNo)) + 1 : 1;
-  document.getElementById('ctn-boxno').value = nextBox;
+  document.getElementById('ctn-refno').value = '';
   var cwEl=document.getElementById('ctn-weight'); if(cwEl) cwEl.value='';
   var cmEl=document.getElementById('ctn-measure'); if(cmEl) cmEl.value='72x46x31.5';
   clearItemRows('modal');
@@ -1199,14 +1160,17 @@ function openAddCarton(plId) {
 function saveCarton(doPrint) {
   const plId = v('ctn-pl-id');
   const pl = getPL(plId); if (!pl) return;
-  const boxNo = parseInt(v('ctn-boxno'));
-  if (!boxNo) { toast('⚠️ Please enter Box No!'); return; }
+  const refNo = (v('ctn-refno')||'').trim();
   const items = getItemRowsData('modal');
   if (!items.length || !items[0].style) { toast('⚠️ Please select Item Description!'); return; }
   const tPcs = items.reduce((s,it) => s + it.pcs, 0);
   const editId = v('ctn-edit-id');
+  // Auto-assign boxNo: keep existing if edit, else max+1
+  var autoBoxNo = editId
+    ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
+    : (pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1);
   const carton = {
-    id: editId || uid(), boxNo, items,
+    id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
     totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
     ts: new Date().toISOString(),
     createdBy: editId ? undefined : (currentUser ? currentUser.name : '—')
@@ -1216,8 +1180,8 @@ function saveCarton(doPrint) {
   pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
   save();
   closeModal('modal-carton');
-  renderPLList(); renderDash();
-  toast(`✅ Box ${String(boxNo).padStart(3,'0')} saved!`);
+  renderDash();
+  toast(`✅ Box ${String(autoBoxNo).padStart(3,'0')} saved!`);
   if (doPrint) printCartonLabel(plId, carton.id);
   openCartonList(plId);
 }
@@ -1229,7 +1193,7 @@ function editCarton(plId, cId) {
   document.getElementById('ctn-pl-id').value = plId;
   document.getElementById('ctn-edit-id').value = cId;
   document.getElementById('modal-ctn-title').textContent = '✏️ Edit Carton — BOX ' + String(c.boxNo).padStart(3,'0');
-  document.getElementById('ctn-boxno').value = c.boxNo;
+  document.getElementById('ctn-refno').value = c.refNo || '';
   var wEl = document.getElementById('ctn-weight'); if(wEl) wEl.value = c.weight||'';
   var mEl = document.getElementById('ctn-measure'); if(mEl) mEl.value = c.measure||'';
   clearItemRows('modal');
@@ -1296,10 +1260,7 @@ function showInputForm() {
   const packed = pl.cartons.length;
   const total = pl.total || '—';
   document.getElementById('selected-pl-progress').textContent = `${packed} cartons packed`;
-  const nextBox = packed > 0 ? Math.max(...pl.cartons.map(c=>c.boxNo)) + 1 : 1;
-  document.getElementById('next-box-display').textContent = String(nextBox).padStart(3,'0');
-  document.getElementById('total-box-display').textContent = `of ${total} cartons`;
-  document.getElementById('f-boxno').value = nextBox;
+  var fRefEl = document.getElementById('f-refno'); if(fRefEl) fRefEl.value = '';
   // Clear form
   var fwEl=document.getElementById('f-weight'); if(fwEl) fwEl.value='';
   var fmEl=document.getElementById('f-measure'); if(fmEl) fmEl.value='72x46x31.5';
@@ -1314,17 +1275,13 @@ function changePL() {
 function mobileSubmit(doPrint) {
   const pl = getPL(selectedPLId);
   if (!pl) { toast('⚠️ Select a PL first!'); return; }
-  const boxNo = parseInt(v('f-boxno'));
-  if (!boxNo) { toast('⚠️ Please enter Box No!'); return; }
-  if (pl.cartons.find(c => c.boxNo === boxNo)) {
-    if (!confirm(`Box ${boxNo} already exists. Replace?`)) return;
-    pl.cartons = pl.cartons.filter(c => c.boxNo !== boxNo);
-  }
+  const refNo = (v('f-refno')||'').trim();
   const items = getItemRowsData('mobile');
   if (!items.length || !items[0].style) { toast('⚠️ Please select Item Description!'); return; }
   const tPcs = items.reduce((s,it) => s + it.pcs, 0);
+  var autoBoxNo = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1;
   const carton = {
-    id: uid(), boxNo, items,
+    id: uid(), boxNo: autoBoxNo, refNo: refNo, items,
     totalPcs: tPcs, weight: v('f-weight'), measure: (v('f-measure')||'').replace(/[X*]/g,'x'),
     ts: new Date().toISOString(),
     createdBy: currentUser ? currentUser.name : '—'
@@ -1340,8 +1297,19 @@ function mobileSubmit(doPrint) {
 // ══ PRINT LABEL ══
 function getCartonItems(c) {
   // support old data model (flat style/colorCode/sizes) and new (items array)
-  if (c.items && c.items.length) return c.items;
-  return [{ style: c.style||'', colorCode: c.colorCode||'', colorName: c.colorName||'', sizes: c.sizes||{}, pcs: c.totalPcs||0 }];
+  var items = (c.items && c.items.length)
+    ? c.items
+    : [{ style: c.style||'', colorCode: c.colorCode||'', colorName: c.colorName||'', sizes: c.sizes||{}, pcs: c.totalPcs||0 }];
+  // Auto sort: Style No → Colour Code (numeric) → Size (smallest size first)
+  return items.slice().sort(function(a, b) {
+    var s = (a.style||'').localeCompare(b.style||'');
+    if (s !== 0) return s;
+    var c2 = parseInt(a.colorCode||'0') - parseInt(b.colorCode||'0');
+    if (c2 !== 0) return c2;
+    var aFirst = SIZES.indexOf(SIZES.find(function(sz){ return a.sizes&&a.sizes[sz]; }) || 'ZZZ');
+    var bFirst = SIZES.indexOf(SIZES.find(function(sz){ return b.sizes&&b.sizes[sz]; }) || 'ZZZ');
+    return aFirst - bFirst;
+  });
 }
 
 function fieldFontSize(text) {
@@ -1352,17 +1320,26 @@ function fieldFontSize(text) {
   return '17pt';
 }
 
-function buildLabelCol(fields, itemCount, qrText) {
+function buildLabelCol(fields, itemCount, qrText, refNo) {
   var fieldDivs = fields.map(function(f){
     var fs = fieldFontSize(f);
     var ws = (f || '').length > 14 ? 'normal' : 'nowrap';
     return '<div class="label-field" style="font-size:' + fs + ';white-space:' + ws + '">' + f + '</div>';
   }).join('');
   // QR is absolute-positioned so excluded from flex children
+  var refTag = refNo
+    ? '<div style="display:flex;flex-direction:column;justify-content:center;padding-left:6px;border-left:2px solid #ccc;margin-left:6px;">'
+      + '<div style="font-size:8pt;font-family:Arial,sans-serif;color:#555;font-weight:600;white-space:nowrap;">Ref No.</div>'
+      + '<div style="font-size:20pt;font-family:Arial,sans-serif;font-weight:900;color:#000;white-space:nowrap;">' + refNo + '</div>'
+      + '</div>'
+    : '';
   var qrDiv = qrText
-    ? '<div class="label-qr-wrap" style="position:absolute;bottom:6mm;left:50%;transform:translateX(-50%);text-align:center;width:100px;">'
+    ? '<div class="label-qr-wrap" style="position:absolute;bottom:6mm;left:50%;transform:translateX(-50%);display:flex;flex-direction:row;align-items:flex-start;">'
+      + '<div style="text-align:center;">'
       + '<div class="label-qr" data-qr-text="' + qrText + '"></div>'
       + '<div style="font-size:6.5pt;font-family:Arial,sans-serif;font-weight:700;color:#000;margin-top:3px;line-height:1.3;white-space:pre;text-align:center;">' + qrText.replace(/ \| /g, '\n') + '</div>'
+      + '</div>'
+      + refTag
       + '</div>'
     : '';
   return '<div class="label-col">' + fieldDivs + qrDiv + '</div>';
@@ -1385,9 +1362,22 @@ function generateQRCodes(callback) {
 
 function cartonLabelFields(pl, c) {
   var items = getCartonItems(c);
-  var total = pl.total || pl.cartons.length;
-  var ctnStr = String(c.boxNo).padStart(3,'0') + '/' + String(total).padStart(3,'0');
-  var boxStr = String(c.boxNo).padStart(3,'0');
+  var total = pl.cartons.length;
+  // Use same sort as PL export so label box number matches PL
+  var sortedCtns = pl.cartons.slice().sort(function(a,b){
+    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
+    if (amulti !== bmulti) return amulti - bmulti;
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
+  var displayIdx = sortedCtns.findIndex(function(x){ return x.id === c.id; });
+  var displayNo = displayIdx >= 0 ? displayIdx + 1 : c.boxNo;
+  var ctnStr = String(displayNo).padStart(3,'0') + '/' + String(total).padStart(3,'0');
+  var boxStr = String(displayNo).padStart(3,'0');
   var styles = [];
   var colorOrder = [], colorMap = {};
   items.forEach(function(it) {
@@ -1420,7 +1410,8 @@ function cartonLabelFields(pl, c) {
       boxStr
     ],
     itemCount: colorOrder.length,
-    qrText: qrText
+    qrText: qrText,
+    refNo: c.refNo || ''
   };
 }
 
@@ -1429,8 +1420,8 @@ function printCartonLabel(plId, ctnId) {
   var c = pl ? pl.cartons.find(function(x){ return x.id === ctnId; }) : null;
   if (!pl || !c) return;
   var result = cartonLabelFields(pl, c);
-  var col = buildLabelCol(result.fields, result.itemCount, result.qrText);
-  var col2 = buildLabelCol(result.fields, result.itemCount, result.qrText);
+  var col = buildLabelCol(result.fields, result.itemCount, result.qrText, result.refNo);
+  var col2 = buildLabelCol(result.fields, result.itemCount, result.qrText, result.refNo);
   var area = document.getElementById('print-label-area');
   area.innerHTML = '<div class="print-page-label">' + col + '<div class="cut-line"></div>' + col2 + '</div>';
   document.body.classList.add('printing-label');
@@ -1440,13 +1431,22 @@ function printCartonLabel(plId, ctnId) {
 function printAllLabels(plId) {
   var pl = getPL(plId);
   if (!pl || pl.cartons.length === 0) { toast('No cartons untuk diprint!'); return; }
-  var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
+  var sorted = pl.cartons.slice().sort(function(a,b){
+    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
+    if (amulti !== bmulti) return amulti - bmulti;
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
   var slots = sorted.map(function(c) { return cartonLabelFields(pl, c); });
   var pages = '';
   for (var i = 0; i < slots.length; i += 2) {
     var L = slots[i];
     var R = slots[i+1] || slots[i];
-    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText) + '<div class="cut-line"></div>' + buildLabelCol(R.fields, R.itemCount, R.qrText) + '</div>';
+    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText, L.refNo) + '<div class="cut-line"></div>' + buildLabelCol(R.fields, R.itemCount, R.qrText, R.refNo) + '</div>';
   }
   var area = document.getElementById('print-label-area');
   area.innerHTML = pages;
@@ -1472,7 +1472,7 @@ function dashCartonRow(c) {
   var scanEntry = scannedMap[c.id];
   var verifiedBy = scanEntry ? (typeof scanEntry === 'object' ? (scanEntry.by||'—') : '—') : '—';
   var verColor = scanEntry ? 'var(--green)' : 'var(--text-muted)';
-  return '<tr><td><b>' + String(c.boxNo).padStart(3,'0') + '</b></td>'
+  return '<tr><td><b>' + String(c.boxNo).padStart(3,'0') + '</b>' + (c.refNo ? '<br><span style="font-size:.68rem;color:#8b949e">' + c.refNo + '</span>' : '') + '</td>'
     + '<td>' + styleStr + '</td>'
     + '<td>' + colorStr + '</td>'
     + '<td>' + sizeStr + '</td>'
@@ -1589,7 +1589,16 @@ function printPLDoc() {
 }
 
 function buildPLDoc(pl) {
-  var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
+  var sorted = pl.cartons.slice().sort(function(a,b){
+    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
+    if (amulti !== bmulti) return amulti - bmulti;
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
   var totalCtns = sorted.length;
   var totalPcsAll = sorted.reduce(function(s,c){ return s+(c.totalPcs||0); }, 0);
   var totalGW = sorted.reduce(function(s,c){ return s+(parseFloat(c.weight)||0); }, 0).toFixed(2);
@@ -1629,7 +1638,8 @@ function buildPLDoc(pl) {
 
   var rows = '';
   var firstCarton = true;
-  sorted.forEach(function(c) {
+  sorted.forEach(function(c, cIdx) {
+    var displayBoxNo = String(cIdx + 1).padStart(3, '0');
     var items = getCartonItems(c);
     var rs = items.length;
     var multi = rs > 1;
@@ -1640,7 +1650,7 @@ function buildPLDoc(pl) {
       if (idx === 0) {
         rows += '<tr>'
           + (firstCarton ? '<td rowspan="'+totalItemRows+'" style="'+TDB+'font-size:.68rem;background:#e8f0fe">'+(pl.container||'')+'</td>' : '')
-          + '<td rowspan="'+rs+'" style="'+TDB+bg+'">'+String(c.boxNo).padStart(3,'0')+'</td>'
+          + '<td rowspan="'+rs+'" style="'+TDB+bg+'">'+displayBoxNo+'</td>'
           + '<td style="'+TD+bg+'">'+(it.style||'')+'</td>'
           + '<td style="'+TD+'text-align:center;'+bg+'">'+(it.colorCode||'')+'</td>'
           + '<td style="'+TD+bg+'">'+(it.colorName||'')+'</td>'
@@ -1827,7 +1837,16 @@ function renderScanList() {
   if (!el) return;
   var pl = scanSelectedPLId ? getPL(scanSelectedPLId) : null;
   if (!pl) { el.innerHTML = ''; return; }
-  var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
+  var sorted = pl.cartons.slice().sort(function(a,b){
+    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
+    if (amulti !== bmulti) return amulti - bmulti;
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
   var scannedCount = sorted.filter(function(c){ return scannedMap[c.id]; }).length;
   var total = sorted.length;
   var pct = total > 0 ? Math.round(scannedCount/total*100) : 0;
@@ -1877,7 +1896,16 @@ function downloadCSV() {
   var sizeHeaders = SIZES.join(',');
   rows.push('PL Name,Invoice No,Destination,Box No,Style,Color Code,Color Name,' + sizeHeaders + ',Total PCS,Weight (kg),Measure,Packed At');
   pls.forEach(function(pl) {
-    var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
+    var sorted = pl.cartons.slice().sort(function(a,b){
+    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
+    if (amulti !== bmulti) return amulti - bmulti;
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
     sorted.forEach(function(c) {
       var items = getCartonItems(c);
       items.forEach(function(it) {
@@ -2004,7 +2032,8 @@ function downloadExcel() {
     html += '</tr>';
 
     // Data rows
-    sorted.forEach(function(c){
+    sorted.forEach(function(c, cIdx){
+      var displayBoxNo = String(cIdx + 1).padStart(3, '0');
       var items = getCartonItems(c);
       var rs = items.length || 1;
       items.forEach(function(it){
@@ -2014,7 +2043,7 @@ function downloadExcel() {
         html += '<tr>';
         if (idx===0) {
           html += '<td rowspan="'+rs+'" style="'+TDM+'">'+(pl.container||'')+'</td>';
-          html += '<td rowspan="'+rs+'" style="'+TDM+'">'+String(c.boxNo).padStart(3,'0')+'</td>';
+          html += '<td rowspan="'+rs+'" style="'+TDM+'">'+displayBoxNo+'</td>';
         }
         html += '<td style="'+TD+'">'+(it.style||'')+'</td>';
         html += '<td style="'+TDC+'">'+(it.colorCode||'')+'</td>';
@@ -2295,7 +2324,7 @@ function renderUsersPage() {
           + '<td style="color:' + statusColor + '">' + statusLabel + '</td>'
           + '<td>' + (u.role !== 'admin' && u.plainPassword ? '<span style="font-family:monospace;background:#161b22;padding:2px 8px;border-radius:4px;font-size:.78rem">' + u.plainPassword + '</span>' : '—') + '</td>'
           + '<td>' + (isSelf ? '—' : '<button class="btn" style="padding:3px 8px;font-size:.72rem;margin-right:4px" onclick="resetUserPassword(\'' + u.id + '\')">'+'Reset Pwd</button><button class="btn" style="padding:3px 8px;font-size:.72rem;background:#f85149;color:#fff" onclick="deleteUser(\'' + u.id + '\')">'+'Delete</button>') + '</td>'
-          + '</tr>';
+              + '</tr>';
       });
       html += '</tbody></table>';
       allEl.innerHTML = html;
@@ -2369,7 +2398,19 @@ window.onload = function() {
   } else {
     clearItemRows('modal'); renderAll(); _showAuthOrMain();
   }
-  setInterval(autoSyncTick, 15000);
+  function autoSyncTick() {
+    syncToSheets();
+    if (SB_URL && SB_KEY) {
+      loadFromSheets(function(ok) {
+        if (ok) {
+          // Only re-render background pages, NOT pl-list (to avoid resetting carton view)
+          renderDash();
+          renderExportSelect();
+        }
+      });
+    }
+  }
+  setInterval(autoSyncTick, 30000);
 };
 </script>
 </body>
