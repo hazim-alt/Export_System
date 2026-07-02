@@ -767,7 +767,8 @@ function updateFormHeader() {
 function initForm() {
   var pl = getPL(selectedPLId);
   if (!pl) return;
-  var fRefEl = document.getElementById('f-refno'); if (fRefEl) fRefEl.value = '';
+  var nextRef = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) + 1 : 1;
+  var fRefEl = document.getElementById('f-refno'); if (fRefEl) fRefEl.value = String(nextRef);
   document.getElementById('f-weight').value = '';
   document.getElementById('f-measure').value = '72x46x31.5';
   clearItems();
