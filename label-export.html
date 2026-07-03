@@ -2526,11 +2526,11 @@ window.onload = function() {
   }
 
   var _lastSaveTime = 0;
-  var _lastPushTime = 0;
+  var _dirty = false;
   var _isSyncing = false;
   var _isSyncingAt = 0;
   var _origSave = save;
-  save = function() { _lastSaveTime = Date.now(); _origSave(); autoSyncTick(); };
+  save = function() { _lastSaveTime = Date.now(); _dirty = true; _origSave(); autoSyncTick(); };
 
   function renderCartonListIfOpen() {
     if (selectedPLId && document.getElementById('modal-carton') && document.getElementById('modal-carton').classList.contains('open')) {
@@ -2579,15 +2579,18 @@ window.onload = function() {
     if (!SB_URL || !SB_KEY) return;
     _isSyncing = true;
     _isSyncingAt = Date.now();
-    var needsPush = _lastSaveTime > _lastPushTime;
-    if (needsPush) {
-      // Ada data baru — push dulu, pastu pull
+    if (_dirty) {
+      _dirty = false; // clear dulu — kalau save lagi masa sync, akan jadi true balik
       syncToSheets(function() {
-        _lastPushTime = Date.now();
-        mergeFromSheets(function(ok) {
+        if (_dirty) {
+          // Ada save baru masa sync tadi — jangan merge (data Supabase belum terkini), biar tick seterusnya push balik
           _isSyncing = false;
-          if (ok) { renderAll(); }
-        });
+        } else {
+          mergeFromSheets(function(ok) {
+            _isSyncing = false;
+            if (ok) { renderAll(); }
+          });
+        }
       });
     } else {
       // Takde save baru — terus pull je (lagi laju)
