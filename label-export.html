@@ -1146,6 +1146,7 @@ function deletePL(id) {
 // ══ RENDER PL LIST ══
 function renderPLList() {
   const el = document.getElementById('pl-list');
+  if (!el) return;
   if (pls.length === 0) {
     el.innerHTML = `<div class="card" style="text-align:center;color:#aaa;padding:40px"><div style="font-size:2rem;margin-bottom:8px">📋</div>No Packing Lists yet. Click "+ New PL" to start.</div>`;
     return;
@@ -1375,6 +1376,7 @@ function deleteCarton(plId, cId) {
 // ══ INPUT (MOBILE) ══
 function renderInputPLSelect() {
   const el = document.getElementById('pl-select-list');
+  if (!el) return;
   const activePls = pls.filter(function(pl){ return pl.status !== 'completed'; });
   if (pls.length === 0) {
     el.innerHTML = `<p style="color:#aaa;text-align:center;padding:16px">No PLs yet. Create one from the "Packing Lists" tab.</p>`;
@@ -1644,6 +1646,7 @@ function toggleDashPL(id) {
 }
 
 function renderDash() {
+  if (!document.getElementById('d-pls')) return;
   const totalPacked = pls.reduce((s,pl) => s + pl.cartons.length, 0);
   const totalExpected = pls.reduce((s,pl) => s + (pl.total||0), 0);
   document.getElementById('d-pls').textContent = pls.length;
