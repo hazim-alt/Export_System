@@ -2526,6 +2526,7 @@ window.onload = function() {
   }
 
   var _lastSaveTime = 0;
+  var _lastPushTime = 0;
   var _isSyncing = false;
   var _isSyncingAt = 0;
   var _origSave = save;
@@ -2578,16 +2579,23 @@ window.onload = function() {
     if (!SB_URL || !SB_KEY) return;
     _isSyncing = true;
     _isSyncingAt = Date.now();
-    syncToSheets(function() {
-      if (Date.now() - _lastSaveTime > 3000) {
+    var needsPush = _lastSaveTime > _lastPushTime;
+    if (needsPush) {
+      // Ada data baru — push dulu, pastu pull
+      syncToSheets(function() {
+        _lastPushTime = Date.now();
         mergeFromSheets(function(ok) {
           _isSyncing = false;
           if (ok) { renderAll(); }
         });
-      } else {
+      });
+    } else {
+      // Takde save baru — terus pull je (lagi laju)
+      mergeFromSheets(function(ok) {
         _isSyncing = false;
-      }
-    });
+        if (ok) { renderAll(); }
+      });
+    }
   }
 
   setInterval(autoSyncTick, 3000);
