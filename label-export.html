@@ -907,12 +907,17 @@ function syncToSheets(onDone) {
         cRows.forEach(function(row) {
           if (row.id && deletedCartonIds.indexOf(row.id) === -1) { deletedCartonIds.push(row.id); }
         });
-        // Safety: NEVER treat currently-live cartons as deleted,
-        // even if deleted_cartons table has stale/wrong IDs
-        var liveCartonIds = [];
-        pls.forEach(function(pl) { (pl.cartons||[]).forEach(function(c){ liveCartonIds.push(c.id); }); });
-        deletedCartonIds = deletedCartonIds.filter(function(id){ return liveCartonIds.indexOf(id) === -1; });
         saveDeletedCartonIds();
+        // Apply deletions from other users to local pls
+        if (deletedCartonIds.length) {
+          var changed2 = false;
+          pls.forEach(function(pl) {
+            var before2 = (pl.cartons || []).length;
+            pl.cartons = (pl.cartons || []).filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
+            if ((pl.cartons || []).length !== before2) changed2 = true;
+          });
+          if (changed2) { localStorage.setItem('export_pls', JSON.stringify(pls)); }
+        }
       }
       _doSync(onDone);
     })
@@ -2540,7 +2545,6 @@ window.onload = function() {
       .then(function(r) { return r.json(); })
       .then(function(plRows) {
         if (!Array.isArray(plRows)) { callback(false); return; }
-        console.log('[Merge] Got ' + plRows.length + ' PLs from Supabase:', plRows.map(function(r){ return r.data ? (r.data.name + ':' + (r.data.cartons ? r.data.cartons.length : 0) + 'ctns') : 'null'; }));
         var localIds = pls.map(function(p) { return p.id; });
         var changed = false;
         plRows.forEach(function(row) {
@@ -2548,20 +2552,12 @@ window.onload = function() {
           if (deletedPLIds.indexOf(row.data.id) !== -1) return;
           var idx = localIds.indexOf(row.data.id);
           if (idx !== -1) {
-            var remoteCtnCount = row.data.cartons ? row.data.cartons.length : 0;
-            var localCtnCount = pls[idx].cartons ? pls[idx].cartons.length : 0;
-            // Only overwrite if remote has MORE or EQUAL cartons — never downgrade
-            if (remoteCtnCount >= localCtnCount) {
-              var merged = row.data;
-              if (deletedCartonIds.length && merged.cartons) {
-                merged.cartons = merged.cartons.filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
-              }
-              pls[idx] = merged;
-              changed = true;
-              console.log('[Merge] Updated ' + row.data.name + ': remote=' + remoteCtnCount + ' local was=' + localCtnCount);
-            } else {
-              console.log('[Merge] Skipped overwrite for ' + row.data.name + ': remote=' + remoteCtnCount + ' < local=' + localCtnCount);
+            var merged = row.data;
+            if (deletedCartonIds.length && merged.cartons) {
+              merged.cartons = merged.cartons.filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
             }
+            pls[idx] = merged;
+            changed = true;
           } else {
             var newPl = row.data;
             if (deletedCartonIds.length && newPl.cartons) {
