@@ -814,7 +814,7 @@ var SHEET_URL = ''; // legacy, unused
 
 function save() {
   localStorage.setItem('export_pls', JSON.stringify(pls));
-  syncToSheets();
+  // syncToSheets handled by autoSyncTick — no direct call to avoid race conditions
 }
 function load() {
   try { pls = JSON.parse(localStorage.getItem('export_pls')) || []; } catch(e) { pls = []; }
@@ -822,7 +822,6 @@ function load() {
 }
 function saveScanned() {
   localStorage.setItem('export_scanned', JSON.stringify(scannedMap));
-  syncToSheets();
 }
 
 // ══ SUPABASE SYNC ══
@@ -1400,7 +1399,7 @@ function unlockPL(id) {
   if (!confirm('Unlock this PL? Edits will be allowed again.')) return;
   var pl = getPL(id); if (!pl) return;
   delete pl.status; delete pl.completedAt;
-  save(); syncToSheets(); renderPLList();
+  save(); renderPLList();
   toast('🔓 PL unlocked.');
 }
 function deleteCarton(plId, cId) {
@@ -2521,7 +2520,7 @@ window.onload = function() {
   var _isSyncing = false;
   var _isSyncingAt = 0;
   var _origSave = save;
-  save = function() { _lastSaveTime = Date.now(); _origSave(); };
+  save = function() { _lastSaveTime = Date.now(); _origSave(); autoSyncTick(); };
 
   function renderCartonListIfOpen() {
     if (selectedPLId && document.getElementById('modal-carton') && document.getElementById('modal-carton').classList.contains('open')) {
