@@ -163,9 +163,9 @@ function renderVerifyList() {
   html += '<div style="font-weight:800;color:var(--blue)">' + pl.name + '</div>';
   html += '<div style="font-size:.82rem;font-weight:700;color:' + (allDone ? 'var(--green)' : '#888') + '">' + scannedCount + '/' + total + ' CTN' + (allDone ? ' ✅' : '') + '</div>';
   html += '</div>';
-  html += '<div style="height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-bottom:14px">';
+  html += '<div style="height:8px;background:var(--border);border-radius:99px;overflow:hidden;margin-bottom:14px">';
   html += '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:99px;transition:width .3s"></div></div>';
-  if (sorted.length === 0) { html += '<p style="text-align:center;color:#aaa;padding:12px">No cartons.</p>'; }
+  if (sorted.length === 0) { html += '<p style="text-align:center;color:var(--text-muted);padding:12px">No cartons.</p>'; }
   else {
     sorted.forEach(function(c) {
       var scanEntry = scannedMap[c.id];
@@ -177,25 +177,25 @@ function renderVerifyList() {
       var styleStr = Array.from(new Set(items.map(function(it){ return it.style||''; }))).filter(Boolean).join(' / ');
       html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1.5px solid ' + (done ? '#86efac' : '#e5e7eb') + ';background:' + (done ? '#f0fdf4' : '#fafafa') + ';margin-bottom:7px">';
       html += '<span style="font-size:1.3rem">' + (done ? '✅' : '⬜') + '</span>';
-      html += '<div style="flex:1"><div style="font-weight:800;font-size:.88rem">BOX ' + boxStr + ' <span style="font-weight:400;color:#666;font-size:.82rem">' + styleStr + '</span></div>';
+      html += '<div style="flex:1"><div style="font-weight:800;font-size:.88rem">BOX ' + boxStr + ' <span style="font-weight:400;color:var(--text-muted);font-size:.82rem">' + styleStr + '</span></div>';
       html += '<div style="font-size:.75rem;color:var(--text-muted)">' + (c.totalPcs||0) + ' PCS';
       if (c.createdBy) html += ' &nbsp;·&nbsp; 📝 <b>' + c.createdBy + '</b>';
       if (done && verifiedBy) html += ' &nbsp;·&nbsp; ✅ <b>' + verifiedBy + '</b>';
       html += '</div></div>';
-      if (done) html += '<button onclick="unscanVerify(\'' + c.id + '\')" style="border:none;background:none;color:#bbb;font-size:.8rem;cursor:pointer;padding:4px 8px">&#x2715;</button>';
+      if (done) html += '<button onclick="unscanVerify(\'' + c.id + '\')" style="border:none;background:none;color:var(--text-muted);font-size:.8rem;cursor:pointer;padding:4px 8px">&#x2715;</button>';
       html += '</div>';
     });
   }
   if (pl.status === 'completed') {
-    html += '<div style="margin-top:10px;padding:12px;background:#f0fdf4;border:2px solid #86efac;border-radius:10px;text-align:center">';
+    html += '<div style="margin-top:10px;padding:12px;background:rgba(22,163,74,.15);border:2px solid #86efac;border-radius:10px;text-align:center">';
     html += '<div style="font-size:1.2rem;font-weight:800;color:#16a34a">✅ Loading Completed</div>';
-    html += '<div style="font-size:.78rem;color:#555;margin-top:4px">This PL is locked. View only.</div>';
+    html += '<div style="font-size:.78rem;color:var(--text-muted);margin-top:4px">This PL is locked. View only.</div>';
     html += '</div>';
   } else {
     if (allDone) {
       html += '<button onclick="finishLoading(\'' + pl.id + '\')" style="margin-top:10px;width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;letter-spacing:.3px">🏁 Finish Loading</button>';
     }
-    html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset All Scans</button>';
+    html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed var(--border);border-radius:8px;background:none;color:var(--text-muted);font-size:.78rem;cursor:pointer">Reset All Scans</button>';
   }
   html += '</div>';
   el.innerHTML = html;
@@ -231,11 +231,19 @@ function resetVerifyPL(plId) {
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 :root{
   --blue:#1e3a5f;--blue-light:#2563eb;--green:#16a34a;--red:#dc2626;
-  --yellow:#f59e0b;--border:#2a3a4e;--bg:#0f1923;--card:#1a2535;
-  --text:#e2e8f0;--text-muted:#94a3b8;
-  --radius:14px;--shadow:0 2px 12px rgba(0,0,0,.3);
+  --yellow:#f59e0b;--border:#2d3348;--bg:#0f1117;--card:#1a1f2e;
+  --card-alt:#1e2538;--bg-alt:#141824;
+  --text:#e2e8f0;--text-muted:#8892a4;
+  --radius:14px;--shadow:0 2px 16px rgba(0,0,0,.4);
+  --inp-bg:#1e2538;--inp-border:#2d3348;
 }
-body{color:var(--text);background:var(--bg)}
+html.light{
+  --border:#dde3ee;--bg:#f0f4f8;--card:#fff;
+  --card-alt:#f8faff;--bg-alt:#f0f4f8;
+  --text:#1a2332;--text-muted:#64748b;
+  --shadow:0 2px 12px rgba(0,0,0,.08);
+  --inp-bg:#fff;--inp-border:#dde3ee;
+}
 
 /* ── HEADER ── */
 .header{background:var(--blue);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
@@ -259,12 +267,12 @@ body{color:var(--text);background:var(--bg)}
 .card-title{font-size:.85rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
 
 /* ── PL SELECT LIST ── */
-.pl-btn{display:block;width:100%;background:var(--card);border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;text-align:left;cursor:pointer;transition:border-color .15s;color:var(--text)}
-.pl-btn:active{background:#243447}
-.pl-btn.selected{border-color:var(--blue-light);background:#1a2e47}
+.pl-btn{display:block;width:100%;background:var(--card);border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;text-align:left;cursor:pointer;transition:border-color .15s}
+.pl-btn:active{background:var(--bg-alt)}
+.pl-btn.selected{border-color:var(--blue-light);background:rgba(37,99,235,.12)}
 .pl-btn-name{font-size:1rem;font-weight:800;color:var(--blue);margin-bottom:4px}
 .pl-btn-sub{font-size:.78rem;color:var(--text-muted)}
-.pl-btn-badge{display:inline-block;background:#e0f2fe;color:#0369a1;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin-top:6px}
+.pl-btn-badge{display:inline-block;background:rgba(37,99,235,.18);color:var(--blue-light);font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin-top:6px}
 
 /* ── SETUP SCREEN ── */
 .setup-card{margin:20px 16px;background:var(--card);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow)}
@@ -273,7 +281,7 @@ body{color:var(--text);background:var(--bg)}
 .setup-desc{font-size:.82rem;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.5}
 .field-group{margin-bottom:14px}
 .field-lbl{font-size:.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
-.field-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;transition:border-color .15s;background:var(--card);color:var(--text)}
+.field-inp{width:100%;padding:13px 14px;border:2px solid var(--inp-border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;transition:border-color .15s;background:var(--inp-bg);color:var(--text)}
 .field-inp:focus{border-color:var(--blue-light)}
 
 /* ── BUTTONS ── */
@@ -282,38 +290,40 @@ body{color:var(--text);background:var(--bg)}
 .btn-primary{background:var(--blue);color:#fff;padding:15px 20px;font-size:1rem;width:100%;border-radius:12px}
 .btn-green{background:var(--green);color:#fff;padding:15px 20px;font-size:1rem;width:100%;border-radius:12px}
 .btn-red{background:var(--red);color:#fff;padding:8px 14px;font-size:.82rem;border-radius:8px}
-.btn-ghost{background:#243447;color:var(--text);padding:12px 16px;font-size:.88rem;border-radius:10px}
+.btn-ghost{background:var(--card-alt);color:var(--text);padding:12px 16px;font-size:.88rem;border-radius:10px}
 .btn-outline{background:transparent;color:var(--blue-light);border:2px solid var(--blue-light);padding:13px 20px;font-size:.95rem;width:100%;border-radius:12px}
+.btn-grey{background:var(--card-alt);color:var(--text-muted);border:1.5px solid var(--border);padding:10px 16px;font-size:.85rem;border-radius:10px}
+.btn-wa{background:#25D366;color:#fff;padding:10px 16px;font-size:.85rem;border-radius:10px;border:none;display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700}
 .btn-row{display:flex;gap:10px;margin-top:12px}
 .btn-row .btn{flex:1}
 
 /* ── FORM ── */
 .form-section{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
 .form-label{font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;display:block}
-.form-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:1.1rem;font-weight:700;font-family:inherit;outline:none;background:var(--card);color:var(--text)}
+.form-inp{width:100%;padding:13px 14px;border:2px solid var(--inp-border);border-radius:10px;font-size:1.1rem;font-weight:700;font-family:inherit;outline:none;background:var(--inp-bg);color:var(--text)}
 .form-inp:focus{border-color:var(--blue-light)}
 .form-inp.big{font-size:1.6rem;text-align:center;padding:16px}
-.form-inp[readonly]{background:var(--bg);color:var(--text-muted)}
+.form-inp[readonly]{background:var(--bg-alt);color:var(--text-muted)}
 
 /* ── SIZE GRID ── */
 .size-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0}
 .size-cell{display:flex;flex-direction:column;align-items:center;gap:3px}
 .size-lbl{font-size:.65rem;font-weight:800;color:var(--blue-light);text-transform:uppercase}
-.size-inp{width:100%;padding:10px 2px;border:1.5px solid var(--border);border-radius:8px;font-size:1rem;font-weight:700;text-align:center;outline:none;font-family:inherit;background:var(--card);color:var(--text)}
+.size-inp{width:100%;padding:10px 2px;border:1.5px solid var(--inp-border);border-radius:8px;font-size:1rem;font-weight:700;text-align:center;outline:none;font-family:inherit;background:var(--inp-bg);color:var(--text)}
 .size-inp:focus{border-color:var(--blue-light)}
 
 /* ── ITEM BLOCK ── */
-.item-block{background:#243447;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.item-block{background:var(--card-alt);border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
 .item-block-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .item-num{font-size:.82rem;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.5px}
 .item-subtotal{font-size:.8rem;font-weight:700;color:var(--green);text-align:right;margin-top:8px}
 
 /* ── SELECT ── */
-.form-select{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-weight:700;font-family:inherit;outline:none;background:var(--card);color:var(--text);-webkit-appearance:none}
+.form-select{width:100%;padding:13px 14px;border:2px solid var(--inp-border);border-radius:10px;font-size:.95rem;font-weight:700;font-family:inherit;outline:none;background:var(--inp-bg);color:var(--text);-webkit-appearance:none}
 .form-select:focus{border-color:var(--blue-light)}
 
 /* ── PROGRESS BAR ── */
-.prog-bg{background:#e2e8f0;border-radius:20px;height:6px;margin-top:6px;overflow:hidden}
+.prog-bg{background:var(--border);border-radius:20px;height:6px;margin-top:6px;overflow:hidden}
 .prog-fill{background:var(--blue-light);height:100%;border-radius:20px;transition:width .3s}
 
 /* ── TOAST ── */
@@ -321,7 +331,7 @@ body{color:var(--text);background:var(--bg)}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ── STATUS BAR ── */
-.status-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:rgba(255,255,255,.8);font-size:.75rem;font-weight:600}
+.status-bar{display:flex;align-items:center;gap:8px;padding:8px 16px;background:rgba(0,0,0,.3);font-size:.75rem;font-weight:600}
 .status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .status-dot.green{background:var(--green)}
 .status-dot.red{background:var(--red)}
@@ -331,7 +341,7 @@ body{color:var(--text);background:var(--bg)}
 .ctn-row:last-child{border-bottom:none}
 .ctn-boxno{width:44px;height:44px;background:var(--blue);color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0}
 .ctn-info{flex:1;min-width:0}
-.ctn-style{font-size:.88rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctn-style{font-size:.88rem;font-weight:700;color:#1a2332;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctn-sub{font-size:.73rem;color:var(--text-muted);margin-top:2px}
 .ctn-pcs{font-size:.88rem;font-weight:800;color:var(--green);flex-shrink:0}
 
@@ -368,7 +378,7 @@ body{color:var(--text);background:var(--bg)}
 .home-card:active{transform:scale(.97);box-shadow:none}
 .home-card-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.6rem}
 .home-card-title{font-weight:800;font-size:.95rem;color:var(--text)}
-.home-card-sub{font-size:.72rem;color:#94a3b8;line-height:1.4}
+.home-card-sub{font-size:.72rem;color:var(--text-muted);line-height:1.4}
 
 
 @keyframes scanline {
@@ -417,15 +427,23 @@ if ('serviceWorker' in navigator) {
     <div style="font-size:3.5rem;margin-bottom:8px">📦</div>
     <div style="font-size:1.4rem;font-weight:900;color:var(--blue);margin-bottom:4px">Export System</div>
     <div style="font-size:.82rem;color:#94a3b8;margin-bottom:32px">Warehouse Mobile App</div>
-    <div style="background:var(--card);border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.3);padding:24px;width:100%;max-width:360px">
-      <div style="font-size:1rem;font-weight:800;color:var(--text);margin-bottom:6px">👤 Enter Your Name</div>
-      <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:16px">Your name will be recorded for each activity.</div>
-      <input type="text" id="login-name-input" class="field-inp" placeholder="e.g. Ahmad, Siti, Ali..."
-        style="font-size:1.1rem;text-transform:uppercase;margin-bottom:16px"
-        oninput="this.value=this.value.toUpperCase()"
-        onkeydown="if(event.key==='Enter')submitLogin()" autocomplete="off" />
-      <button class="btn btn-primary" onclick="submitLogin()" style="width:100%;padding:14px;font-size:1rem;border-radius:12px">
-        ✅ Start Working
+    <div style="background:var(--card);border-radius:16px;box-shadow:var(--shadow);padding:24px;width:100%;max-width:360px">
+      <div style="font-size:1rem;font-weight:800;color:var(--text);margin-bottom:6px">🔐 Log In</div>
+      <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:16px">Gunakan akaun yang sama seperti web app.</div>
+      <div id="login-error" style="display:none;background:#ff4d4d22;border:1px solid #ff4d4d66;border-radius:8px;padding:8px 12px;font-size:.8rem;color:#ff6b6b;margin-bottom:12px"></div>
+      <input type="text" id="login-username" class="field-inp" placeholder="Username"
+        style="font-size:1rem;margin-bottom:10px"
+        oninput="this.value=this.value.toLowerCase()"
+        onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()"
+        autocomplete="username" autocapitalize="none" autocorrect="off" />
+      <div style="position:relative;margin-bottom:16px">
+        <input type="password" id="login-password" class="field-inp" placeholder="Password"
+          style="font-size:1rem;padding-right:44px;width:100%;box-sizing:border-box"
+          onkeydown="if(event.key==='Enter')submitLogin()" autocomplete="current-password" />
+        <button type="button" onclick="var i=document.getElementById('login-password');if(i.type==='password'){i.type='text';this.textContent='🙈';}else{i.type='password';this.textContent='👁';}" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:1.1rem;padding:0;line-height:1">👁</button>
+      </div>
+      <button class="btn btn-primary" id="login-btn" onclick="submitLogin()" style="width:100%;padding:14px;font-size:1rem;border-radius:12px">
+        ✅ Log In
       </button>
     </div>
   </div>
@@ -441,8 +459,9 @@ if ('serviceWorker' in navigator) {
     <div class="header-sub" id="header-sub">Loading...</div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
-    <button class="btn-icon" onclick="showChangeName()" title="Change Name" id="btn-name" style="font-size:.75rem;width:auto;padding:0 10px;border-radius:20px;display:none">👤 <span id="header-worker-name"></span></button>
-    <button class="btn-icon" onclick="logout()" title="Log Out" id="btn-logout" style="font-size:.75rem;width:auto;padding:0 10px;border-radius:20px;display:none;background:#dc2626;color:#fff">🚪</button>
+    <button class="btn-icon" id="btn-name" style="font-size:.75rem;width:auto;padding:0 10px;border-radius:20px;display:none">👤 <span id="header-worker-name"></span></button>
+    <button class="btn-icon" onclick="logout()" id="btn-logout" title="Log Out" style="display:none;font-size:.75rem;width:auto;padding:0 10px;border-radius:20px;background:#dc2626;color:#fff">🚪 Logout</button>
+    <button class="btn-icon" onclick="toggleTheme()" id="btn-theme" title="Toggle Dark/Light">🌙</button>
     <button class="btn-icon" onclick="showSetup()" title="Setup Supabase">⚙️</button>
   </div>
 </div>
@@ -497,8 +516,8 @@ if ('serviceWorker' in navigator) {
       <div style="font-size:.75rem;color:var(--text-muted);margin-top:2px" id="home-pl-sub">—</div>
       <button onclick="showPLSelect()" style="margin-top:8px;border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;padding:0;cursor:pointer">Change PL →</button>
     </div>
-    <div id="home-no-pl" style="background:#fff8e1;border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--yellow)">
-      <div style="font-size:.82rem;color:#92400e;font-weight:700">⚠️ No Packing List selected</div>
+    <div id="home-no-pl" style="background:rgba(245,158,11,.12);border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--yellow)">
+      <div style="font-size:.82rem;color:var(--yellow);font-weight:700">⚠️ No Packing List selected</div>
       <button onclick="showPLSelect()" style="margin-top:6px;border:none;background:var(--yellow);color:#fff;font-size:.8rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer">Select PL Now</button>
     </div>
 
@@ -514,17 +533,28 @@ if ('serviceWorker' in navigator) {
         <div class="home-card-title">Loading Verify</div>
         <div class="home-card-sub">Scan & verify loaded cartons</div>
       </button>
+      <button class="home-card" onclick="selectedPLId ? showList() : showPLSelect()">
+        <div class="home-card-icon" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)">📋</div>
+        <div class="home-card-title">Carton List</div>
+        <div class="home-card-sub">View & edit cartons</div>
+      </button>
+      <button class="home-card" onclick="selectedPLId ? sendWhatsAppReport() : showPLSelect()">
+        <div class="home-card-icon" style="background:linear-gradient(135deg,#25D366,#128C7E)">📲</div>
+        <div class="home-card-title">Send Report</div>
+        <div class="home-card-sub">Share via WhatsApp</div>
+      </button>
     </div>
 
     <!-- Quick stats -->
-    <div id="home-stats" style="display:none;margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div style="background:var(--card);border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
-        <div style="font-size:1.6rem;font-weight:900;color:var(--blue-light)" id="home-stat-ctn">0</div>
-        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Cartons</div>
+    <div id="home-stats" style="display:none;margin-top:14px;background:var(--card);border-radius:10px;padding:10px 16px;box-shadow:var(--shadow);flex-direction:row;align-items:center;justify-content:space-around;gap:8px">
+      <div style="text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:var(--blue-light)" id="home-stat-ctn">0</div>
+        <div style="font-size:.7rem;color:var(--text-muted);font-weight:600">Cartons</div>
       </div>
-      <div style="background:var(--card);border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
-        <div style="font-size:1.6rem;font-weight:900;color:var(--green)" id="home-stat-scan">0</div>
-        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Verified</div>
+      <div style="width:1px;height:32px;background:var(--border)"></div>
+      <div style="text-align:center">
+        <div style="font-size:1.4rem;font-weight:900;color:var(--green)" id="home-stat-scan">0</div>
+        <div style="font-size:.7rem;color:var(--text-muted);font-weight:600">Verified</div>
       </div>
     </div>
   </div>
@@ -555,9 +585,9 @@ if ('serviceWorker' in navigator) {
   </div>
   <div style="padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border)">
     <div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem">
-      <span style="color:var(--text-muted)">Karton diinput</span>
+      <span style="color:var(--text-muted)">Cartons entered</span>
       <div style="display:flex;gap:8px;align-items:center">
-        <button onclick="showList()" style="border:none;background:none;color:var(--blue-light);font-size:.75rem;font-weight:700;cursor:pointer">Lihat Senarai →</button>
+        <button onclick="showList()" style="border:none;background:none;color:var(--blue-light);font-size:.75rem;font-weight:700;cursor:pointer">View List →</button>
         <span id="form-progress" style="font-weight:800;color:var(--blue-light)">0 / 0</span>
       </div>
     </div>
@@ -565,18 +595,14 @@ if ('serviceWorker' in navigator) {
   </div>
   <div style="padding:12px;padding-bottom:30px">
     <div class="form-section">
-      <label class="form-label">🟠 REF NO.</label>
-      <input type="text" class="form-inp big" id="f-refno" inputmode="text" placeholder="cth: A1, 07, REF-001" autocomplete="off" />
-    </div>
-    <div class="form-section">
-      <label class="form-label">📦 BOX NO.</label>
-      <input type="number" class="form-inp big" id="f-boxno" readonly style="background:var(--bg);color:var(--text-muted);cursor:not-allowed" />
+      <label class="form-label">📦 Box No.</label>
+      <input type="number" class="form-inp big" id="f-boxno" inputmode="numeric" min="1" placeholder="001" />
     </div>
     <div id="form-items"></div>
     <button class="btn btn-ghost" style="width:100%;margin-bottom:12px" onclick="addItem()">＋ Add More Items</button>
-    <div style="background:var(--blue);border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;color:#fff">GRAND TOTAL PCS</span>
-      <span style="font-size:1.4rem;font-weight:800;color:#38bdf8"><span id="form-grand">0</span> PCS</span>
+    <div style="background:rgba(3,105,161,.15);border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;color:#0369a1">GRAND TOTAL</span>
+      <span style="font-size:1.4rem;font-weight:800;color:#0369a1"><span id="form-grand">0</span> PCS</span>
     </div>
     <div class="form-section">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -591,8 +617,8 @@ if ('serviceWorker' in navigator) {
       </div>
     </div>
     <div class="btn-row">
-      <button class="btn btn-green" style="flex:2" id="form-save-btn" onclick="submitCarton(false)">✅ Save</button>
-      <button class="btn btn-outline" style="flex:1" onclick="submitCarton(true)">🖨️ Save + Print Label</button>
+      <button class="btn btn-green" style="flex:2" id="form-save-btn" onclick="submitCarton(false)">✅ Save Box</button>
+      <button class="btn btn-outline" style="flex:1" onclick="submitCarton(true)">🖨️ Print</button>
     </div>
     <div style="padding:0 0 12px">
       <button class="btn btn-grey" id="form-cancel-btn" style="display:none;width:100%;margin-top:8px" onclick="cancelEdit()">✕ Cancel Edit</button>
@@ -611,6 +637,9 @@ if ('serviceWorker' in navigator) {
       </div>
       <button class="btn btn-ghost" style="padding:10px 14px" onclick="showHome()">Home</button>
     </div>
+    <div style="margin-top:8px;display:flex;gap:8px">
+      <button class="btn-wa" style="flex:1;justify-content:center" onclick="sendWhatsAppReport()">📲 Send WhatsApp Report</button>
+    </div>
   </div>
   <div class="card">
     <div id="ctn-list-wrap">
@@ -625,7 +654,7 @@ if ('serviceWorker' in navigator) {
     <button onclick="stopVerifyScan(); showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Back</button>
   </div>
   <div style="padding:0 12px">
-    <div style="background:#eff6ff;border-radius:12px;padding:12px 16px;margin-bottom:4px;border-left:4px solid var(--blue-light);display:flex;justify-content:space-between;align-items:center">
+    <div style="background:rgba(37,99,235,.12);border-radius:12px;padding:12px 16px;margin-bottom:4px;border-left:4px solid var(--blue-light);display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-size:.7rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">Packing List</div>
         <div style="font-weight:800;color:var(--blue);font-size:1rem" id="verify-pl-name">—</div>
@@ -705,7 +734,6 @@ var SB_KEY = localStorage.getItem('sb_key') || '';
 var pls = [];
 var scannedMap = {};
 var selectedPLId = null;
-var lastSaveTime = 0;
 var itemCounter = 0;
 var _gtTimer = null;
 
@@ -736,30 +764,33 @@ function sbHeaders() {
   return { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
 }
 function syncToSupabase() {
-  if (!SB_URL || !SB_KEY) return;
-  var payload = JSON.stringify({ key: 'main', value: { pls: pls, scannedMap: scannedMap } });
-  fetch(SB_URL + '/rest/v1/export_data', { method: 'POST', headers: sbHeaders(), body: payload })
-    .catch(function(){});
+  if (!SB_URL || !SB_KEY || !pls || pls.length === 0) return;
+  var plPayload = pls.map(function(pl) {
+    return {
+      id: pl.id,
+      name: pl.name || '',
+      status: pl.status || 'active',
+      total_boxes: (pl.cartons || []).length,
+      carton_count: (pl.cartons || []).length,
+      data: pl,
+      updated_at: new Date().toISOString()
+    };
+  });
+  var h = Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
+  fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: h, body: JSON.stringify(plPayload) }).catch(function(){});
 }
 function loadFromSupabase(cb) {
   if (!SB_URL || !SB_KEY) { cb(false); return; }
-  fetch(SB_URL + '/rest/v1/export_data?key=eq.main&select=value', { headers: sbHeaders() })
+  fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
     .then(function(r){ return r.json(); })
-    .then(function(rows){
-      var data = rows && rows[0] && rows[0].value;
-      if (data && Array.isArray(data.pls)) {
-        if (data.pls.length === 0 && pls.length > 0) {
-          syncToSupabase(); cb(true);
-        } else {
-          pls = data.pls;
-          scannedMap = data.scannedMap || {};
-          localStorage.setItem('export_pls', JSON.stringify(pls));
-          localStorage.setItem('export_scanned', JSON.stringify(scannedMap));
-          cb(true);
-        }
-      } else { cb(false); }
-    })
-    .catch(function(){ cb(false); });
+    .then(function(rows) {
+      if (!Array.isArray(rows)) { cb(false); return; }
+      var loaded = rows.map(function(row){ return row.data; }).filter(function(pl){ return pl && pl.id; });
+      if (loaded.length === 0) { cb(false); return; }
+      pls = loaded;
+      localStorage.setItem('export_pls', JSON.stringify(pls));
+      cb(true);
+    }).catch(function(){ cb(false); });
 }
 
 // ══ SETUP ══
@@ -851,8 +882,8 @@ function selectPL(id) {
 function updateFormHeader() {
   var pl = getPL(selectedPLId);
   if (!pl) return;
-  document.getElementById('form-pl-name').textContent = editingCartonId ? '✏️ Edit Carton' : pl.name;
-  document.getElementById('form-pl-sub').textContent = editingCartonId ? pl.name : (pl.invNo || '') + ' | ' + (pl.dest || '');
+  document.getElementById('form-pl-name').textContent = pl.name;
+  document.getElementById('form-pl-sub').textContent = (pl.invNo || '') + ' | ' + (pl.dest || '');
   var packed = pl.cartons.length;
   var total = pl.total || '—';
   document.getElementById('form-progress').textContent = packed + ' / ' + total;
@@ -868,13 +899,7 @@ function openEditCarton(cartonId) {
   var c = pl.cartons.find(function(x){ return x.id === cartonId; });
   if (!c) return;
   editingCartonId = cartonId;
-  // If boxNo null (old data), assign based on position in list
-  if (!c.boxNo) {
-    var idx = pl.cartons.findIndex(function(x){ return x.id === cartonId; });
-    c.boxNo = idx + 1;
-  }
-  document.getElementById('f-refno').value = c.refNo || '';
-  document.getElementById('f-boxno').value = c.boxNo;
+  document.getElementById('f-boxno').value = c.boxNo || '';
   document.getElementById('f-weight').value = c.weight || '';
   document.getElementById('f-measure').value = c.measure || '72x46x31.5';
   document.getElementById('form-items').innerHTML = '';
@@ -889,7 +914,7 @@ function openEditCarton(cartonId) {
 
 function cancelEdit() {
   editingCartonId = null;
-  document.getElementById('form-save-btn').textContent = '✅ Save';
+  document.getElementById('form-save-btn').textContent = '✅ Save Box';
   document.getElementById('form-cancel-btn').style.display = 'none';
   showScreen('screen-list');
 }
@@ -897,13 +922,12 @@ function cancelEdit() {
 function initForm() {
   editingCartonId = null;
   var el = document.getElementById('form-save-btn');
-  if (el) el.textContent = '✅ Save';
+  if (el) el.textContent = '✅ Save Box';
   var cel = document.getElementById('form-cancel-btn');
   if (cel) cel.style.display = 'none';
   var pl = getPL(selectedPLId);
   if (!pl) return;
   var nextBox = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return c.boxNo; })) + 1 : 1;
-  document.getElementById('f-refno').value = '';
   document.getElementById('f-boxno').value = nextBox;
   document.getElementById('f-weight').value = '';
   document.getElementById('f-measure').value = '72x46x31.5';
@@ -944,7 +968,7 @@ function addItem(data) {
     + '<div><label class="form-label">Color Code</label>'
     + '<input type="text" class="form-inp ir-ccode" placeholder="63" inputmode="numeric" value="' + (data.colorCode || '') + '" oninput="autoFillColor(this)" /></div>'
     + '<div><label class="form-label">Color Name</label>'
-    + '<input type="text" class="form-inp ir-cname" placeholder="Auto-fill" readonly style="background:var(--bg);font-size:.9rem" value="' + (data.colorName || '') + '" /></div>'
+    + '<input type="text" class="form-inp ir-cname" placeholder="Auto-fill" readonly style="background:#f8faff;font-size:.9rem" value="' + (data.colorName || '') + '" /></div>'
     + '</div>'
     + '<label class="form-label">Qty Per Size</label>'
     + '<div class="size-grid">' + sizeGrid + '</div>'
@@ -1036,7 +1060,6 @@ function submitCarton(doPrint) {
   if (editingCartonId) {
     var ci = pl.cartons.findIndex(function(x){ return x.id === editingCartonId; });
     if (ci !== -1) {
-      pl.cartons[ci].refNo = v('f-refno');
       pl.cartons[ci].boxNo = boxNo;
       pl.cartons[ci].items = items;
       pl.cartons[ci].totalPcs = tPcs;
@@ -1046,7 +1069,7 @@ function submitCarton(doPrint) {
     save();
     showToast('✅ BOX ' + String(boxNo).padStart(3,'0') + ' updated!');
     editingCartonId = null;
-    document.getElementById('form-save-btn').textContent = '✅ Save';
+    document.getElementById('form-save-btn').textContent = '✅ Save Box';
     document.getElementById('form-cancel-btn').style.display = 'none';
     renderCartonList();
     showScreen('screen-list');
@@ -1076,7 +1099,7 @@ function submitCarton(doPrint) {
     }
 
     var carton = {
-      id: uid(), refNo: v('f-refno'), boxNo: assignedBox, items: items,
+      id: uid(), boxNo: assignedBox, items: items,
       totalPcs: tPcs,
       weight: v('f-weight'),
       measure: v('f-measure'),
@@ -1095,16 +1118,52 @@ function submitCarton(doPrint) {
   }
 
   if (SB_URL && SB_KEY) {
-    fetch(SB_URL + '/rest/v1/export_data?key=eq.main&select=value', { headers: sbHeaders() })
+    fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
       .then(function(r){ return r.json(); })
       .then(function(rows){
-        var data = rows && rows[0] && rows[0].value;
-        doSave(data && Array.isArray(data.pls) ? data.pls : null);
+        var loaded = Array.isArray(rows) ? rows.map(function(r){ return r.data; }).filter(function(p){ return p&&p.id; }) : null;
+        doSave(loaded && loaded.length > 0 ? loaded : null);
       })
       .catch(function(){ doSave(null); });
   } else {
     doSave(null);
   }
+}
+
+// ══ WHATSAPP REPORT ══
+function sendWhatsAppReport() {
+  var pl = getPL(selectedPLId);
+  if (!pl) { showToast('⚠️ Tiada PL dipilih.'); return; }
+  var sorted = (pl.cartons || []).slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
+  var totalPcs = 0;
+  var lines = [];
+  lines.push('📦 *PACKING LIST REPORT*');
+  lines.push('PL: *' + pl.name + '*');
+  if (pl.invNo) lines.push('Invoice: ' + pl.invNo);
+  if (pl.dest) lines.push('Destination: ' + pl.dest);
+  if (pl.shipDate) lines.push('Ship Date: ' + pl.shipDate);
+  lines.push('Total Cartons: *' + sorted.length + '*');
+  lines.push('');
+  sorted.forEach(function(c) {
+    var items = c.items && c.items.length ? c.items : [{ style: c.style||'', colorCode: c.colorCode||'', colorName: c.colorName||'', sizes: c.sizes||{}, pcs: c.totalPcs||0 }];
+    var styleStr = items.map(function(it){ return it.style||''; }).filter(Boolean).filter(function(v,i,a){ return a.indexOf(v)===i; }).join('/') || '—';
+    var pcs = items.reduce(function(s,it){ return s + (it.pcs||0); }, 0);
+    totalPcs += pcs;
+    lines.push('📦 BOX ' + String(c.boxNo).padStart(3,'0') + ' — ' + styleStr);
+    items.forEach(function(it) {
+      var colorStr = (it.colorCode ? it.colorCode + ' ' : '') + (it.colorName || '');
+      var sizeParts = [];
+      if (it.sizes) { SIZES.forEach(function(s){ if (it.sizes[s] > 0) sizeParts.push(s+':'+it.sizes[s]); }); }
+      lines.push('  • ' + colorStr + (sizeParts.length ? ' [' + sizeParts.join(' ') + ']' : '') + ' ' + (it.pcs||0) + ' PCS');
+    });
+    if (c.weight || c.measure) lines.push('  ' + (c.weight ? c.weight+'kg' : '') + (c.weight && c.measure ? ' | ' : '') + (c.measure || ''));
+  });
+  lines.push('');
+  lines.push('✅ *TOTAL: ' + totalPcs + ' PCS*');
+  lines.push('_Generated: ' + new Date().toLocaleString('ms-MY') + '_');
+  var text = lines.join('\n');
+  var url = 'https://wa.me/?text=' + encodeURIComponent(text);
+  window.open(url, '_blank');
 }
 
 // ══ CARTON LIST ══
@@ -1273,12 +1332,12 @@ function updateHomeCards() {
     if (sc) sc.textContent = total;
     if (ss) ss.textContent = scanned;
     var statsEl = document.getElementById('home-stats');
-    if (statsEl) statsEl.style.display = 'grid';
+    if (statsEl) statsEl.style.display = 'flex';
   } else {
     if (infoEl) infoEl.style.display = 'none';
      if (noPlEl) noPlEl.style.display = '';
     var statsEl2 = document.getElementById('home-stats');
-    if (statsEl2) statsEl2.style.display = 'none';
+    if (statsEl2) { statsEl2.style.display = 'none'; }
   }
 }
 
@@ -1288,82 +1347,31 @@ var SB_KEY = localStorage.getItem('sb_key') || '';
 function sbHeaders() {
   return { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
 }
-function buildCartonRows(pl, c) {
-  var items = c.items || [];
-  if (items.length === 0) items = [{}];
-  return items.map(function(it, idx) {
-    var sz = it.sizes || {};
+function syncToSupabase() {
+  if (!SB_URL || !SB_KEY || !pls || pls.length === 0) return;
+  var plPayload = pls.map(function(pl) {
     return {
-      id: c.id + '_' + idx,
-      carton_id: c.id,
-      pl_id: pl.id,
-      pl_name: pl.name || '',
-      box_no: c.boxNo || null,
-      ref_no: c.refNo || null,
-      style: it.style || null,
-      color_code: it.colorCode || null,
-      color_name: it.colorName || null,
-      size_xs: sz['XS'] || 0,
-      size_s: sz['S'] || 0,
-      size_m: sz['M'] || 0,
-      size_l: sz['L'] || 0,
-      size_xl: sz['XL'] || 0,
-      size_2xl: sz['2XL'] || 0,
-      size_3xl: sz['3XL'] || 0,
-      size_4xl: sz['4XL'] || 0,
-      size_5xl: sz['5XL'] || 0,
-      size_6xl: sz['6XL'] || 0,
-      pcs: it.pcs || 0,
-      weight: c.weight || null,
-      measure: c.measure || null,
-      ts: c.ts ? new Date(c.ts).toISOString() : null,
-      created_by: c.createdBy || null,
-      verified_by: c.verifiedBy || null
+      id: pl.id,
+      name: pl.name || '',
+      status: pl.status || 'active',
+      total_boxes: (pl.cartons || []).length,
+      carton_count: (pl.cartons || []).length,
+      data: pl,
+      updated_at: new Date().toISOString()
     };
   });
-}
-function syncToSupabase(onDone) {
-  if (!SB_URL || !SB_KEY) { if (onDone) onDone(false); return; }
-  if (!pls.length) { if (onDone) onDone(true); return; }
-  lastSaveTime = Date.now();
-
-  var plPayload = pls.map(function(pl) {
-    return { id: pl.id, name: pl.name || '', status: pl.status || 'active',
-      total_boxes: pl.total || 0, carton_count: (pl.cartons || []).length,
-      data: pl, updated_at: new Date().toISOString() };
-  });
-  var cRows = [];
-  pls.forEach(function(pl) {
-    (pl.cartons || []).forEach(function(c) {
-      buildCartonRows(pl, c).forEach(function(r) { cRows.push(r); });
-    });
-  });
-  var plIds = pls.map(function(pl) { return pl.id; }).join(',');
-  var authHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
-
-  fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
-    .then(function(r){ if (!r.ok) r.text().then(function(t){ console.error('PL sync:', r.status, t); }); })
-    .catch(function(e){ console.error('PL sync error:', e); });
-
-  fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
-    .then(function(r) {
-      if (!r.ok) return r.text().then(function(t){ console.error('Carton delete error:', r.status, t); showToast('⚠️ Sync gagal (' + r.status + ')'); });
-      if (!cRows.length) { if (onDone) onDone(true); return; }
-      return fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: authHeaders, body: JSON.stringify(cRows) })
-        .then(function(r2) {
-          if (!r2.ok) r2.text().then(function(t){ console.error('Carton insert error:', r2.status, t); showToast('⚠️ Sync gagal (' + r2.status + ')'); });
-          if (onDone) onDone(true);
-        });
-    })
-    .catch(function(e){ console.error('Carton sync error:', e); if (onDone) onDone(false); });
+  var h = Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
+  fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: h, body: JSON.stringify(plPayload) }).catch(function(){});
 }
 function loadFromSupabase(cb) {
   if (!SB_URL || !SB_KEY) { cb(false); return; }
   fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
     .then(function(r){ return r.json(); })
-    .then(function(plRows) {
-      if (!Array.isArray(plRows) || plRows.length === 0) { cb(false); return; }
-      pls = plRows.map(function(row){ return row.data; }).filter(Boolean);
+    .then(function(rows) {
+      if (!Array.isArray(rows)) { cb(false); return; }
+      var loaded = rows.map(function(row){ return row.data; }).filter(function(pl){ return pl && pl.id; });
+      if (loaded.length === 0) { cb(false); return; }
+      pls = loaded;
       localStorage.setItem('export_pls', JSON.stringify(pls));
       cb(true);
     }).catch(function(){ cb(false); });
@@ -1418,33 +1426,91 @@ function save() {
   syncToSupabase();
 }
 
+
 // ══ WORKER NAME / LOGIN ══
 var workerName = '';
+var currentUser = null;
 
-function submitLogin() {
-  var inp = document.getElementById('login-name-input');
-  var name = inp ? inp.value.trim() : '';
-  if (!name) { showToast('⚠️ Please enter your name!'); return; }
-  workerName = name.toUpperCase();
-  localStorage.setItem('worker_name', workerName);
-  updateWorkerNameUI();
-  document.getElementById('main-header').style.display = '';
-  // After login, proceed normally
-  if (!SB_URL && !SB_KEY) {
-    showSetup();
-  } else {
-    showHome();
-  }
+function hashPwd(pw) {
+  var h = 0;
+  for (var i = 0; i < pw.length; i++) { h = (Math.imul(31, h) + pw.charCodeAt(i)) | 0; }
+  return 'h' + Math.abs(h).toString(36);
 }
 
-function showChangeName() {
-  var newName = prompt('Enter your name:', workerName);
-  if (newName && newName.trim()) {
-    workerName = newName.trim().toUpperCase();
-    localStorage.setItem('worker_name', workerName);
-    updateWorkerNameUI();
-    showToast('✅ Name updated: ' + workerName);
+function submitLogin() {
+  var unEl = document.getElementById('login-username');
+  var pwEl = document.getElementById('login-password');
+  var errEl = document.getElementById('login-error');
+  var btn = document.getElementById('login-btn');
+  var username = unEl ? unEl.value.trim().toLowerCase() : '';
+  var password = pwEl ? pwEl.value : '';
+  if (!username || !password) {
+    errEl.textContent = '⚠️ Masukkan username dan password.';
+    errEl.style.display = '';
+    return;
   }
+  if (!SB_URL || !SB_KEY) {
+    errEl.textContent = '⚠️ Belum setup Supabase. Sila setup dulu.';
+    errEl.style.display = '';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking...';
+  errEl.style.display = 'none';
+  fetch(SB_URL + '/rest/v1/app_users?select=*', {
+    headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(rows) {
+      btn.disabled = false;
+      btn.textContent = '✅ Log In';
+      if (!Array.isArray(rows)) {
+        errEl.textContent = '❌ Gagal sambung ke server.';
+        errEl.style.display = '';
+        return;
+      }
+      var user = null;
+      for (var i = 0; i < rows.length; i++) {
+        var u = rows[i];
+        if ((u.username || '').toLowerCase() === username) {
+          var pwHash = hashPwd(password);
+          if (pwHash === hashPwd(u.password || '') || password === u.password) {
+            user = u; break;
+          }
+        }
+      }
+      if (!user) {
+        errEl.textContent = rows.length === 0 ? '⚠️ Tiada pengguna didaftarkan lagi.' : '❌ Username atau password salah.';
+        errEl.style.display = '';
+        return;
+      }
+      if (user.status && user.status !== 'approved') {
+        errEl.textContent = '🚫 Akaun belum diluluskan. Hubungi admin.';
+        errEl.style.display = '';
+        return;
+      }
+      // ✅ Login success
+      currentUser = user;
+      workerName = user.name || user.username || username;
+      localStorage.setItem('worker_name', workerName);
+      localStorage.setItem('current_user', JSON.stringify(currentUser));
+      updateWorkerNameUI();
+      document.getElementById('main-header').style.display = '';
+      if (!SB_URL || !SB_KEY) {
+        showSetup();
+      } else {
+        loadFromSupabase(function(ok) {
+          if (ok) showToast('✅ Data dimuatkan.');
+          showHome();
+        });
+      }
+    })
+    .catch(function(e) {
+      btn.disabled = false;
+      btn.textContent = '✅ Log In';
+      errEl.textContent = '❌ Sambungan gagal. Semak internet.';
+      errEl.style.display = '';
+    });
 }
 
 function updateWorkerNameUI() {
@@ -1459,12 +1525,19 @@ function updateWorkerNameUI() {
 function logout() {
   if (!confirm('Log out sebagai ' + workerName + '?')) return;
   workerName = '';
+  currentUser = null;
   localStorage.removeItem('worker_name');
+  localStorage.removeItem('current_user');
   updateWorkerNameUI();
   document.getElementById('main-header').style.display = 'none';
   document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
   document.getElementById('screen-login').classList.add('active');
-  document.getElementById('login-name-input').value = '';
+  var unEl = document.getElementById('login-username');
+  var pwEl = document.getElementById('login-password');
+  var errEl = document.getElementById('login-error');
+  if (unEl) unEl.value = '';
+  if (pwEl) pwEl.value = '';
+  if (errEl) errEl.style.display = 'none';
   showToast('👋 Logged out');
 }
 
@@ -1495,10 +1568,7 @@ function logout() {
   }
 
   document.addEventListener('touchstart', function(e) {
-    if (window.scrollY === 0) {
-      startY = e.touches[0].clientY;
-      pulling = true;
-    }
+    if (window.scrollY === 0) { startY = e.touches[0].clientY; pulling = true; }
   }, { passive: true });
 
   document.addEventListener('touchmove', function(e) {
@@ -1514,70 +1584,77 @@ function logout() {
   document.addEventListener('touchend', function(e) {
     if (!pulling) return;
     var dist = (e.changedTouches[0].clientY - startY);
-    if (dist > threshold && window.scrollY === 0) {
-      doRefresh();
-    } else {
-      if (indicator) indicator.classList.remove('show');
-      pulling = false;
-    }
+    if (dist > threshold && window.scrollY === 0) { doRefresh(); }
+    else { if (indicator) indicator.classList.remove('show'); pulling = false; }
   });
 })();
 
+// ══ THEME ══
+function toggleTheme() {
+  var isLight = document.documentElement.classList.contains('light');
+  if (isLight) {
+    document.documentElement.classList.remove('light');
+    localStorage.setItem('theme', 'dark');
+    var btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = '🌙';
+  } else {
+    document.documentElement.classList.add('light');
+    localStorage.setItem('theme', 'light');
+    var btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = '☀️';
+  }
+}
+function applyTheme() {
+  var t = localStorage.getItem('theme') || 'dark';
+  if (t === 'light') {
+    document.documentElement.classList.add('light');
+    var btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = '☀️';
+  } else {
+    document.documentElement.classList.remove('light');
+    var btn = document.getElementById('btn-theme');
+    if (btn) btn.textContent = '🌙';
+  }
+}
+
 // ══ WINDOW ONLOAD ══
 window.onload = function() {
+  applyTheme();
   load();
-  workerName = localStorage.getItem('worker_name') || '';
-  updateWorkerNameUI();
-  if (SB_URL && SB_KEY) {
-    loadFromSupabase(function(ok) {
-      if (ok) showToast('Data loaded.');
-    });
-  }
-  updateStatus();
-  // If no name saved, show login screen first
-  if (!workerName) {
-    showScreen('screen-login');
-    var inp = document.getElementById('login-name-input');
-    if (inp) setTimeout(function(){ inp.focus(); }, 300);
-  } else if (!SB_URL && !SB_KEY) {
-    showSetup();
-  } else {
-    showHome();
-  }
-  if (SB_URL && SB_KEY) {
-    var _isSyncing = false;
-    function autoSync() {
-      if (_isSyncing) return;
-      _isSyncing = true;
-      // 1. Push local data to Supabase first
-      syncToSupabase(function() {
-        // 2. Only pull if no local save in last 5s
-        if (Date.now() - lastSaveTime > 5000) {
-          loadFromSupabase(function(ok) {
-            _isSyncing = false;
-            if (ok) {
-              var screen = document.querySelector('.screen.active');
-              if (screen) {
-                var id = screen.id;
-                if (id === 'screen-form') updateFormHeader();
-                if (id === 'screen-list') renderCartonList();
-                if (id === 'screen-home') updateHomeCards();
-                if (id === 'screen-verify') renderVerifyList();
-              }
-            }
-          });
-        } else {
-          _isSyncing = false;
-        }
-      });
+  // Restore session
+  var savedUser = localStorage.getItem('current_user');
+  var savedName = localStorage.getItem('worker_name');
+  if (savedUser && savedName) {
+    try { currentUser = JSON.parse(savedUser); } catch(e) { currentUser = null; }
+    if (currentUser) {
+      workerName = savedName;
+      updateWorkerNameUI();
+      document.getElementById('main-header').style.display = '';
+      updateStatus();
+      if (SB_URL && SB_KEY) {
+        loadFromSupabase(function(ok) {
+          if (ok) showToast('Data dimuatkan.');
+        });
+      }
+      if (!SB_URL || !SB_KEY) {
+        showSetup();
+      } else {
+        showHome();
+      }
+      return;
     }
-    setInterval(autoSync, 8000);
-    document.addEventListener('visibilitychange', function() {
-      if (document.visibilityState === 'visible') autoSync();
-    });
-    window.addEventListener('focus', autoSync);
   }
+  // No session — show login
+  updateStatus();
+  document.getElementById('main-header').style.display = 'none';
+  showScreen('screen-login');
+  setTimeout(function() {
+    var el = document.getElementById('login-username');
+    if (el) el.focus();
+  }, 300);
 };
 </script>
+
+<div id="print-label-area-out" class="print-label-area"></div>
 </body>
 </html>
