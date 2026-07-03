@@ -601,7 +601,45 @@ let pls = []; // array of packing list objects
 let selectedPLId = null;
 let printMode = null; // 'label' | 'pl'
 let scannedMap = {}; // { ctnId: timestamp } persisted in localStorage
+let users = [];
+let currentUser = null;
 
+// ══ AUTH HELPERS ══
+function hashPwd(pw) {
+  // simple hash — good enough for internal SaaS
+  var h = 0;
+  for (var i = 0; i < pw.length; i++) { h = (Math.imul(31, h) + pw.charCodeAt(i)) | 0; }
+  return 'h' + Math.abs(h).toString(36);
+}
+
+function loadUsers() {
+  try { users = JSON.parse(localStorage.getItem('export_users')) || []; } catch(e) { users = []; }
+}
+
+function switchAuthTab(tab) {
+  var loginForm = document.getElementById('auth-login-form');
+  var regForm = document.getElementById('auth-register-form');
+  var tabLogin = document.getElementById('tab-login');
+  var tabReg = document.getElementById('tab-register');
+  if (tab === 'login') {
+    loginForm.style.display = '';
+    regForm.style.display = 'none';
+    tabLogin.style.background = '#1f6feb'; tabLogin.style.color = '#fff';
+    tabReg.style.background = 'transparent'; tabReg.style.color = '#8b949e';
+  } else {
+    loginForm.style.display = 'none';
+    regForm.style.display = '';
+    tabLogin.style.background = 'transparent'; tabLogin.style.color = '#8b949e';
+    tabReg.style.background = '#1f6feb'; tabReg.style.color = '#fff';
+  }
+}
+
+function togglePwd(inputId, btn) {
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+  else { inp.type = 'password'; btn.textContent = '👁'; }
+}
 
 function autoFillColour(codeId, nameId) {
   const code = document.getElementById(codeId).value.trim();
