@@ -363,9 +363,10 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
       <b>Setup steps (one time only):</b><br>
       1. Go to <a href="https://supabase.com" target="_blank" style="color:#58a6ff">supabase.com</a> → Sign up → New project<br>
       2. Go to <b>SQL Editor</b> → run kod ni:<br>
-      <code style="background:#0d1117;color:#79c0ff;padding:6px 10px;border-radius:6px;font-size:.75rem;display:block;margin:6px 0;white-space:pre-wrap;border:1px solid #30363d;font-family:monospace">create table export_data (key text primary key, value jsonb);
-insert into export_data (key, value) values ('main', '{"pls":[],"scannedMap":{}}'::jsonb);
-alter table export_data disable row level security;</code>
+      <code style="background:#0d1117;color:#79c0ff;padding:6px 10px;border-radius:6px;font-size:.75rem;display:block;margin:6px 0;white-space:pre-wrap;border:1px solid #30363d;font-family:monospace">create table packing_lists (id text primary key, name text, status text default 'active', total_boxes int default 0, carton_count int default 0, data jsonb, updated_at timestamptz default now());
+alter table packing_lists disable row level security;
+create table app_users (id text primary key, name text, role text default 'user', password text, created_at timestamptz default now());
+alter table app_users disable row level security;</code>
       3. Go to <b>Settings → API</b> → copy <b>Project URL</b> dan <b>anon public</b> key
     </div>
 
@@ -795,29 +796,43 @@ function sbHeaders() {
 
 function syncToSheets() {
   if (!SB_URL || !SB_KEY) return;
-  var payload = JSON.stringify({ key: 'main', value: { pls: pls, scannedMap: scannedMap } });
-  fetch(SB_URL + '/rest/v1/export_data', { method: 'POST', headers: sbHeaders(), body: payload })
-    .catch(function(){});
+  // Sync packing_lists
+  var plPayload = pls.map(function(pl) {
+    return { id: pl.id, name: pl.name || '', status: pl.status || 'active',
+      total_boxes: pl.total || 0, carton_count: (pl.cartons || []).length,
+      data: pl, updated_at: new Date().toISOString() };
+  });
+  if (plPayload.length) {
+    fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
+      .catch(function(){});
+  }
+  // Sync cartons
+  var cPayload = [];
+  pls.forEach(function(pl) {
+    (pl.cartons || []).forEach(function(c) {
+      cPayload.push({ id: c.id, pl_id: pl.id, pl_name: pl.name || '',
+        box_no: c.boxNo, items: c.items, total_pcs: c.totalPcs,
+        weight: c.weight, measure: c.measure, created_by: c.createdBy, ts: c.ts });
+    });
+  });
+  if (cPayload.length) {
+    fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(cPayload) })
+      .catch(function(){});
+  }
 }
 
 function loadFromSheets(callback) {
   if (!SB_URL || !SB_KEY) { callback(false); return; }
-  fetch(SB_URL + '/rest/v1/export_data?key=eq.main&select=value', { headers: sbHeaders() })
+  fetch(SB_URL + '/rest/v1/packing_lists?select=data', { headers: sbHeaders() })
     .then(function(r) { return r.json(); })
     .then(function(rows) {
-      var data = rows && rows[0] && rows[0].value;
-      if (data && Array.isArray(data.pls)) {
-        // If Supabase empty but local has data, push local up instead
-        if (data.pls.length === 0 && pls.length > 0) {
-          syncToSheets();
-          callback(true);
-        } else {
-          pls = data.pls;
-          scannedMap = data.scannedMap || {};
-          localStorage.setItem('export_pls', JSON.stringify(pls));
-          localStorage.setItem('export_scanned', JSON.stringify(scannedMap));
-          callback(true);
-        }
+      if (!Array.isArray(rows)) { callback(false); return; }
+      if (rows.length === 0 && pls.length > 0) { syncToSheets(); callback(true); return; }
+      if (rows.length > 0) {
+        pls = rows.map(function(r){ return r.data; }).filter(Boolean);
+        scannedMap = scannedMap || {};
+        localStorage.setItem('export_pls', JSON.stringify(pls));
+        callback(true);
       } else { callback(false); }
     })
     .catch(function() { callback(false); });
@@ -1045,6 +1060,7 @@ function openCartonList(plId) {
       var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
       if (ad !== bd) return ad.localeCompare(bd);
       var ai = getCartonItems(a), bi = getCartonItems(b);
+
       var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
       var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
       return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
@@ -1091,7 +1107,6 @@ function openCartonList(plId) {
     + '<div style="font-size:.75rem;color:#888">' + pl.cartons.length + ' cartons | ' + (pl.dest||'') + '</div></div>'
     + '<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">'
     + '<button class="btn btn-grey" onclick="toggleAllCartons()" id="chk-all-btn">☑ Select All</button>'
-    + (currentUser && currentUser.role === 'admin' ? '<button class="btn btn-grey" style="font-size:.7rem;opacity:.6" id="test-day-btn" onclick="testDayToggle(\'' + plId + '\')" title="Test daily sort">🧪 Test Daily</button>' : '')
     + '<button class="btn btn-primary" onclick="printSelectedLabels(\'' + plId + '\')">🖨️ Print Selected</button>'
     + '<button class="btn btn-green" onclick="openAddCarton(\'' + plId + '\')">+ Add Carton</button>'
     + '</div></div>'
@@ -1369,8 +1384,7 @@ function cartonLabelFields(pl, c) {
     var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
-    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
-    if (amulti !== bmulti) return amulti - bmulti;
+
     var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
     var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
     return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
@@ -1391,10 +1405,10 @@ function cartonLabelFields(pl, c) {
   var colorNames = colorOrder.map(function(c){ return colorMap[c].name; });
   var pcsList = colorOrder.map(function(c){ return String(colorMap[c].pcs); });
   var grandPcs = pcsList.reduce(function(s,v){ return s + parseInt(v||0); }, 0);
-  var seenSizes = [];
-  items.forEach(function(it) {
+  var perItemSizes = items.map(function(it) {
     var sz = it.sizes || {};
-    SIZES.forEach(function(s) { if (sz[s] > 0 && seenSizes.indexOf(s) < 0) seenSizes.push(s); });
+    var found = SIZES.filter(function(s){ return sz[s] > 0; });
+    return found.length ? (found.length === 1 ? found[0] : found[0] + '~' + found[found.length-1]) : '—';
   });
   function uniq(arr) { return arr.filter(function(v,i,a){ return v && a.indexOf(v) === i; }); }
   var qrText = 'BOX:' + boxStr + ' | ' + ctnStr + ' | ' + pl.name + ' | PCS:' + grandPcs;
@@ -1403,7 +1417,7 @@ function cartonLabelFields(pl, c) {
       uniq(styles).join(' / '),
       uniq(codes).join(' / '),
       uniq(colorNames).join(' / '),
-      seenSizes.length ? seenSizes[0] + (seenSizes.length > 1 ? '~' + seenSizes[seenSizes.length-1] : '') : '—',
+      perItemSizes.join(' / '),
       pcsList.join(' / '),
       pl.origin || 'MALAYSIA',
       pl.dest || '',
@@ -1436,8 +1450,7 @@ function printAllLabels(plId) {
     var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
-    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
-    if (amulti !== bmulti) return amulti - bmulti;
+
     var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
     var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
     return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
@@ -1456,28 +1469,27 @@ function printAllLabels(plId) {
 }
 
 // ══ DASHBOARD ══
-function dashCartonRow(c) {
+function dashCartonRow(c, displayIdx) {
   var items = getCartonItems(c);
   var uniq = function(arr) { return arr.filter(function(v,i,a){ return v && a.indexOf(v)===i; }); };
   var styleStr = uniq(items.map(function(it){ return it.style||''; })).join(' / ') || '—';
   var colorStr = uniq(items.map(function(it){ return ((it.colorCode||'')+' '+(it.colorName||'')).trim(); })).join(' / ') || '—';
-  var sizeStr = (function() {
-    var found = [];
-    items.forEach(function(it){
-      var sz = it.sizes || {};
-      SIZES.forEach(function(s){ if (sz[s] > 0 && found.indexOf(s) < 0) found.push(s); });
-    });
-    return found.length ? found[0] + (found.length > 1 ? '~' + found[found.length-1] : '') : '—';
-  })();
+  var sizeStr = items.map(function(it){
+    var sz = it.sizes || {};
+    var found = SIZES.filter(function(s){ return sz[s] > 0; });
+    return found.length ? (found.length === 1 ? found[0] : found[0] + '~' + found[found.length-1]) : '—';
+  }).join(' / ');
+  var pcsStr = items.map(function(it){ return it.pcs || 0; }).join(' / ');
   var ts = c.ts ? new Date(c.ts).toLocaleString('en-GB', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : '';
   var scanEntry = scannedMap[c.id];
   var verifiedBy = scanEntry ? (typeof scanEntry === 'object' ? (scanEntry.by||'—') : '—') : '—';
   var verColor = scanEntry ? 'var(--green)' : 'var(--text-muted)';
-  return '<tr><td><b>' + String(c.boxNo).padStart(3,'0') + '</b>' + (c.refNo ? '<br><span style="font-size:.68rem;color:#8b949e">' + c.refNo + '</span>' : '') + '</td>'
+  var boxDisplay = displayIdx ? String(displayIdx).padStart(3,'0') : String(c.boxNo).padStart(3,'0');
+  return '<tr><td><b>' + boxDisplay + '</b>' + (c.refNo ? '<br><span style="font-size:.68rem;color:#8b949e">' + c.refNo + '</span>' : '') + '</td>'
     + '<td>' + styleStr + '</td>'
     + '<td>' + colorStr + '</td>'
     + '<td>' + sizeStr + '</td>'
-    + '<td><b>' + (c.totalPcs||0) + '</b></td>'
+    + '<td><b>' + pcsStr + '</b></td>'
     + '<td style="color:#888;font-size:.72rem">' + ts + '</td>'
     + '<td style="color:var(--blue);font-size:.75rem;font-weight:700">' + (c.createdBy||'—') + '</td>'
     + '<td style="color:' + verColor + ';font-size:.75rem;font-weight:700">' + verifiedBy + '</td></tr>';
@@ -1507,7 +1519,15 @@ function renderDash() {
     const pct = total > 0 ? Math.round(packed/total*100) : 0;
     const isOpen = !!_dashExpanded[pl.id];
     const noRows = '<tr><td colspan="8" style="text-align:center;color:#aaa;padding:12px">No cartons</td></tr>';
-    const rows = packed === 0 ? noRows : pl.cartons.map(dashCartonRow).join('');
+    const sortedCtns = pl.cartons.slice().sort(function(a,b){
+      var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+      if (ad !== bd) return ad.localeCompare(bd);
+      var ai = getCartonItems(a), bi = getCartonItems(b);
+      var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+      var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+      return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+    });
+    const rows = packed === 0 ? noRows : sortedCtns.map(function(c, cIdx){ return dashCartonRow(c, cIdx+1); }).join('');
     return '<div class="card" style="margin-bottom:12px">'
       + '<div onclick="toggleDashPL(\'' + pl.id + '\')" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
       + '<div style="font-weight:800;color:var(--blue);font-size:.95rem">' + pl.name + '</div>'
@@ -1594,8 +1614,7 @@ function buildPLDoc(pl) {
     var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
-    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
-    if (amulti !== bmulti) return amulti - bmulti;
+
     var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
     var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
     return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
@@ -1617,24 +1636,24 @@ function buildPLDoc(pl) {
   // Total item rows (for container rowspan)
   var totalItemRows = sorted.reduce(function(s,c){ return s+getCartonItems(c).length; }, 0);
 
-  var TH = 'border:1px solid #333;padding:3px 3px;background:#b8d4f0;font-size:.62rem;text-align:center;vertical-align:middle;font-weight:700;';
-  var TD = 'border:1px solid #333;padding:2px 3px;font-size:.66rem;vertical-align:middle;background:white;color:#111;';
-  var TDB = 'border:1px solid #333;padding:2px 3px;font-size:.66rem;font-weight:800;text-align:center;vertical-align:middle;background:white;color:#111;';
+  var TH = 'border:1px solid #333;padding:2px 2px;background:#b8d4f0;font-size:.55rem;text-align:center;vertical-align:middle;font-weight:700;';
+  var TD = 'border:1px solid #333;padding:1px 2px;font-size:.55rem;vertical-align:middle;background:white;color:#111;white-space:nowrap;';
+  var TDB = 'border:1px solid #333;padding:1px 2px;font-size:.55rem;font-weight:800;text-align:center;vertical-align:middle;background:white;color:#111;white-space:nowrap;';
 
   var thead = '<thead>'
     + '<tr>'
-    + '<th rowspan="2" style="'+TH+'width:60px">容器和封条编号<br><span style="font-size:.65rem">CONTAINER &amp; SEAL NO.</span></th>'
-    + '<th rowspan="2" style="'+TH+'width:30px">箱号<br>BOX NO.</th>'
-    + '<th rowspan="2" style="'+TH+'width:72px">款号<br>STYLE NO.</th>'
-    + '<th rowspan="2" style="'+TH+'width:26px">代码<br>CODE</th>'
-    + '<th rowspan="2" style="'+TH+'width:65px">颜色<br>COLOR</th>'
+    + '<th rowspan="2" style="'+TH+'width:55px">容器和封条编号<br><span style="font-size:.5rem">CONTAINER &amp; SEAL NO.</span></th>'
+    + '<th rowspan="2" style="'+TH+'width:26px">箱号<br>BOX NO.</th>'
+    + '<th rowspan="2" style="'+TH+'width:70px">款号<br>STYLE NO.</th>'
+    + '<th rowspan="2" style="'+TH+'width:22px">代码<br>CODE</th>'
+    + '<th rowspan="2" style="'+TH+'width:60px">颜色<br>COLOR</th>'
     + '<th colspan="'+SIZES.length+'" style="'+TH+'">尺寸<br>SIZE</th>'
     + '<th rowspan="2" style="'+TH+'width:40px">合计<br>TOTAL (PCS)</th>'
     + '<th rowspan="2" style="'+TH+'width:26px">箱数<br>CTN</th>'
     + '<th rowspan="2" style="'+TH+'width:44px">重量<br>WEIGHT (KG)</th>'
     + '<th rowspan="2" style="'+TH+'width:56px">纸箱规格<br>MEAS(CM)</th>'
     + '</tr>'
-    + '<tr>' + SIZES.map(function(s){ return '<th style="'+TH+'width:30px;word-break:keep-all">'+s+'</th>'; }).join('') + '</tr>'
+    + '<tr>' + SIZES.map(function(s){ return '<th style="'+TH+'width:26px;word-break:keep-all">'+s+'</th>'; }).join('') + '</tr>'
     + '</thead>';
 
   var rows = '';
@@ -1649,7 +1668,7 @@ function buildPLDoc(pl) {
       var sz = it.sizes || {};
       var szCells = SIZES.map(function(s){ return '<td style="'+TD+bg+'text-align:center">'+(sz[s]||'&nbsp;')+'</td>'; }).join('');
       if (idx === 0) {
-        rows += '<tr>'
+        rows += '<tr style="height:26px">'
           + (firstCarton ? '<td rowspan="'+totalItemRows+'" style="'+TDB+'font-size:.68rem;background:#e8f0fe">'+(pl.container||'')+'</td>' : '')
           + '<td rowspan="'+rs+'" style="'+TDB+bg+'">'+displayBoxNo+'</td>'
           + '<td style="'+TD+bg+'">'+(it.style||'')+'</td>'
@@ -1663,7 +1682,7 @@ function buildPLDoc(pl) {
           + '</tr>';
         firstCarton = false;
       } else {
-        rows += '<tr>'
+        rows += '<tr style="height:26px">'
           + '<td style="'+TD+bg+'">'+(it.style||'')+'</td>'
           + '<td style="'+TD+'text-align:center;'+bg+'">'+(it.colorCode||'')+'</td>'
           + '<td style="'+TD+bg+'">'+(it.colorName||'')+'</td>'
@@ -1842,8 +1861,7 @@ function renderScanList() {
     var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
-    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
-    if (amulti !== bmulti) return amulti - bmulti;
+
     var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
     var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
     return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
@@ -1901,8 +1919,7 @@ function downloadCSV() {
     var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
-    var amulti = ai.length > 1 ? 1 : 0, bmulti = bi.length > 1 ? 1 : 0;
-    if (amulti !== bmulti) return amulti - bmulti;
+
     var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
     var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
     return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
@@ -1989,7 +2006,14 @@ function downloadExcel() {
   html += '<head><meta charset="UTF-8"><style>table{border-collapse:collapse;}td,th{word-wrap:break-word;}</style></head><body>';
 
   plsToExport.forEach(function(pl, pIdx) {
-    var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo-b.boxNo; });
+    var sorted = pl.cartons.slice().sort(function(a,b){
+      var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+      if (ad !== bd) return ad.localeCompare(bd);
+      var ai = getCartonItems(a), bi = getCartonItems(b);
+      var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+      var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+      return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+    });
     var grandPcs=0, grandGW=0;
     var sizeTotals={}; SIZES.forEach(function(s){ sizeTotals[s]=0; });
     if (pIdx>0) html += '<br><br>';
@@ -2131,19 +2155,21 @@ function saveUsersLocal() {
 
 function syncUsers() {
   if (!SB_URL || !SB_KEY) return;
-  var payload = JSON.stringify({ key: 'users', value: users });
-  var h = sbHeaders();
-  h['Prefer'] = 'resolution=merge-duplicates';
-  fetch(SB_URL + '/rest/v1/export_data', { method: 'POST', headers: h, body: payload }).catch(function(){});
+  var payload = users.map(function(u) {
+    return { id: u.id, name: u.name, role: u.role || 'user', password: u.password || '' };
+  });
+  if (payload.length) {
+    fetch(SB_URL + '/rest/v1/app_users', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(payload) }).catch(function(){});
+  }
 }
 
 function loadUsersFromSupabase(cb) {
   if (!SB_URL || !SB_KEY) { if (cb) cb(false); return; }
-  fetch(SB_URL + '/rest/v1/export_data?key=eq.users&select=value', { headers: sbHeaders() })
+  fetch(SB_URL + '/rest/v1/app_users?select=*', { headers: sbHeaders() })
     .then(function(r){ return r.json(); })
     .then(function(rows) {
-      if (rows && rows[0] && Array.isArray(rows[0].value)) {
-        users = rows[0].value;
+      if (Array.isArray(rows) && rows.length > 0) {
+        users = rows.map(function(r){ return { id: r.id, name: r.name, role: r.role || 'user', password: r.password || '' }; });
         saveUsersLocal();
         if (cb) cb(true);
       } else { if (cb) cb(false); }
@@ -2231,7 +2257,7 @@ function showMainApp() {
   if (el) { el.textContent = (currentUser ? currentUser.name : ''); el.style.display = ''; }
   if (btn) btn.style.display = '';
   var usersBtn = document.getElementById('sidebar-users-btn');
-  if (usersBtn) usersBtn.style.display = (currentUser && currentUser.role === 'admin') ? '' : 'none';
+  if (usersBtn) usersBtn.style.display = (currentUser && (currentUser.role === 'admin' || currentUser.role === 'owner')) ? '' : 'none';
   updatePendingBadge();
   go('dashboard');
 }
@@ -2321,10 +2347,43 @@ function renderUsersPage() {
         html += '<tr>'
           + '<td>' + u.name + (isSelf ? ' <span style="color:#8b949e;font-size:.72rem">(you)</span>' : '') + '</td>'
           + '<td>@' + u.username + '</td>'
-          + '<td><span style="color:' + (u.role === 'admin' ? 'var(--blue)' : '#8b949e') + '">' + (u.role || 'user') + '</span></td>'
+          + '<td><span style="color:' + (u.role === 'owner' ? '#f0c040' : u.role === 'admin' ? 'var(--blue)' : '#8b949e') + ';font-weight:' + (u.role === 'owner' ? '800' : '600') + '">' + (u.role || 'user') + '</span></td>'
           + '<td style="color:' + statusColor + '">' + statusLabel + '</td>'
-          + '<td>' + (u.role !== 'admin' && u.plainPassword ? '<span style="font-family:monospace;background:#161b22;padding:2px 8px;border-radius:4px;font-size:.78rem">' + u.plainPassword + '</span>' : '—') + '</td>'
-          + '<td>' + (isSelf ? '—' : '<button class="btn" style="padding:3px 8px;font-size:.72rem;margin-right:4px" onclick="resetUserPassword(\'' + u.id + '\')">'+'Reset Pwd</button><button class="btn" style="padding:3px 8px;font-size:.72rem;background:#f85149;color:#fff" onclick="deleteUser(\'' + u.id + '\')">'+'Delete</button>') + '</td>'
+          + '<td>' + (function(){
+              var isOwnerViewer = currentUser && currentUser.role === 'owner';
+              var isAdminViewer = currentUser && currentUser.role === 'admin';
+              // Owner sees all passwords; Admin sees user passwords only
+              var canSee = isOwnerViewer || (isAdminViewer && u.role === 'user');
+              return canSee && u.plainPassword
+                ? '<span style="font-family:monospace;background:#161b22;padding:2px 8px;border-radius:4px;font-size:.78rem">' + u.plainPassword + '</span>'
+                : '—';
+            })() + '</td>'
+          + (function(){
+              if (isSelf) {
+                // Allow self to claim Owner if no owner exists yet
+                var hasOwner = users.some(function(x){ return x.role === 'owner'; });
+                if (!hasOwner && (currentUser.role === 'admin' || currentUser.role === 'user')) {
+                  return '<td><button class="btn" style="padding:3px 10px;font-size:.75rem;background:#f0c040;color:#000;font-weight:800" onclick="claimOwner()">👑 Claim Owner</button></td>';
+                }
+                return '<td style="color:#8b949e;font-size:.8rem">(you)</td>';
+              }
+              var canChangeRole = currentUser && (
+                currentUser.role === 'owner' ||
+                (currentUser.role === 'admin' && u.role !== 'owner')
+              );
+              var roleSelect = '';
+              if (canChangeRole) {
+                var roles = currentUser.role === 'owner' ? ['owner','admin','user'] : ['admin','user'];
+                roleSelect = '<select style="padding:3px 6px;font-size:.72rem;border-radius:4px;border:1px solid var(--border);background:var(--card-bg);color:var(--text)" onchange="changeUserRole(\'' + u.id + '\',this.value)">'
+                  + roles.map(function(r){ return '<option value="' + r + '"' + (r === (u.role||'user') ? ' selected' : '') + '>' + r + '</option>'; }).join('')
+                  + '</select>';
+              }
+              return '<td style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">'
+                + roleSelect
+                + '<button class="btn" style="padding:3px 8px;font-size:.72rem" onclick="resetUserPassword(\'' + u.id + '\')">'+'Reset Pwd</button>'
+                + '<button class="btn" style="padding:3px 8px;font-size:.72rem;background:#f85149;color:#fff" onclick="deleteUser(\'' + u.id + '\')">'+'Delete</button>'
+                + '</td>';
+            })()
               + '</tr>';
       });
       html += '</tbody></table>';
@@ -2344,6 +2403,36 @@ function resetUserPassword(id) {
   u.plainPassword = newPwd;
   saveUsersLocal(); syncUsers(); renderUsersPage();
   toast('✅ Password updated for ' + u.name);
+}
+
+function claimOwner() {
+  if (!currentUser) return;
+  var hasOwner = users.some(function(x){ return x.role === 'owner'; });
+  if (hasOwner) { toast('⛔ Owner already exists.'); return; }
+  if (!confirm('Set yourself (' + currentUser.name + ') as Owner? Owner has full control over all roles.')) return;
+  var u = users.find(function(x){ return x.id === currentUser.id; });
+  if (!u) return;
+  u.role = 'owner';
+  currentUser.role = 'owner';
+  sessionStorage.setItem('current_user', JSON.stringify(currentUser));
+  saveUsersLocal(); syncUsers();
+  showMainApp();
+  go('users');
+  toast('👑 You are now Owner!');
+}
+
+function changeUserRole(id, newRole) {
+  var u = users.find(function(x){ return x.id === id; });
+  if (!u || !newRole || newRole === u.role) return;
+  // Hierarchy: owner > admin > user
+  // Admin cannot change owner or other admin roles
+  if (currentUser && currentUser.role === 'admin') {
+    if (u.role === 'owner' || newRole === 'owner') { toast('⛔ Only Owner can assign Owner role.'); renderUsersPage(); return; }
+  }
+  if (!confirm('Change ' + u.name + ' role from "' + (u.role||'user') + '" to "' + newRole + '"?')) { renderUsersPage(); return; }
+  u.role = newRole;
+  saveUsersLocal(); syncUsers(); renderUsersPage();
+  toast('✅ ' + u.name + ' is now ' + newRole);
 }
 
 function logoutUser() {
