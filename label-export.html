@@ -908,16 +908,9 @@ function syncToSheets(onDone) {
           if (row.id && deletedCartonIds.indexOf(row.id) === -1) { deletedCartonIds.push(row.id); }
         });
         saveDeletedCartonIds();
-        // Remove deleted cartons from local PL data
-        if (deletedCartonIds.length) {
-          var changed2 = false;
-          pls.forEach(function(pl) {
-            var before2 = (pl.cartons || []).length;
-            pl.cartons = (pl.cartons || []).filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
-            if ((pl.cartons || []).length !== before2) changed2 = true;
-          });
-          if (changed2) { save(); }
-        }
+        // NOTE: We do NOT filter pls here during push — that caused live cartons to be
+        // incorrectly removed if deleted_cartons table had stale/mismatched IDs.
+        // Filtering is handled in mergeFromSheets (pull phase) only.
       }
       _doSync(onDone);
     })
