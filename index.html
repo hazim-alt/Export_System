@@ -10,6 +10,7 @@
 <script>
 // ════ LOADING VERIFY ════
 var vscanStream = null, vscanRAF = null, vscanMode = 'cam', vscanPLId = null;
+var vscanCooldown = false, vscanFrameCount = 0;
 
 // showVerify defined below
 
@@ -28,7 +29,7 @@ function initVerifyPage() {
   if (!vscanPLId && selectedPLId) vscanPLId = selectedPLId;
   var pl = vscanPLId ? pls.find(function(p){ return p.id === vscanPLId; }) : null;
   var nameEl = document.getElementById('verify-pl-name');
-  if (nameEl) nameEl.textContent = pl ? pl.name : '— Tiada PL dipilih —';
+  if (nameEl) nameEl.textContent = pl ? pl.name : '— No PL selected —';
   renderVerifyList();
 }
 
@@ -41,32 +42,37 @@ function onVerifyPLChange() {
 }
 
 function startVerifyScan() {
-  if (typeof jsQR === 'undefined') { showToast('Library QR tidak load. Pastikan ada internet.'); return; }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('Browser tidak support kamera.'); return; }
+  if (typeof jsQR === 'undefined') { showToast('QR library not loaded. Check internet connection.'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showToast('Camera not supported by this browser.'); return; }
   var video = document.getElementById('vscan-video');
   document.getElementById('vscan-video-wrap').style.display = '';
-  document.getElementById('vscan-start-btn').style.display = 'none';
-  document.getElementById('vscan-stop-btn').style.display = '';
+  document.getElementById('vscan-controls').style.display = 'none';
   navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } })
     .then(function(stream) {
       vscanStream = stream;
       video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
       video.setAttribute('playsinline', true);
-      video.play().catch(function(){});
+      video.setAttribute('webkit-playsinline', true);
       function waitAndScan(attempt) {
         attempt = attempt || 0; attempt++;
         if (!vscanStream) return;
         if (video.readyState >= 2 && video.videoWidth > 0) { vscanRAF = requestAnimationFrame(vscanTick); }
         else if (attempt < 60) { setTimeout(function(){ waitAndScan(attempt); }, 100); }
       }
-      video.onloadedmetadata = function() { waitAndScan(); };
-      setTimeout(function(){ waitAndScan(); }, 300);
+      video.onloadedmetadata = function() {
+        video.play().then(function(){ waitAndScan(); }).catch(function(){ waitAndScan(); });
+      };
+      var p = video.play();
+      if (p && p.catch) p.catch(function(){});
+      setTimeout(function(){ waitAndScan(); }, 500);
     })
     .catch(function(err) {
       document.getElementById('vscan-video-wrap').style.display = 'none';
       document.getElementById('vscan-start-btn').style.display = '';
       document.getElementById('vscan-stop-btn').style.display = 'none';
-      var msg = err.name === 'NotAllowedError' ? 'Izin kamera ditolak.' : err.name === 'NotFoundError' ? 'Tiada kamera.' : 'Kamera error: ' + err.message;
+      var msg = err.name === 'NotAllowedError' ? 'Camera permission denied.' : err.name === 'NotFoundError' ? 'No camera found.' : 'Camera error: ' + err.message;
       showToast(msg);
     });
 }
@@ -78,26 +84,35 @@ function stopVerifyScan() {
   if (video) { video.srcObject = null; video.onloadedmetadata = null; }
   var wrap = document.getElementById('vscan-video-wrap');
   if (wrap) wrap.style.display = 'none';
+  var ctrl = document.getElementById('vscan-controls');
+  if (ctrl) ctrl.style.display = '';
   var sb = document.getElementById('vscan-start-btn');
-  var st = document.getElementById('vscan-stop-btn');
   if (sb) sb.style.display = '';
-  if (st) st.style.display = 'none';
 }
 
 function vscanTick() {
   if (!vscanStream) return;
+  vscanRAF = requestAnimationFrame(vscanTick);
+  // Only scan every 6 frames (~10fps) to reduce lag
+  vscanFrameCount = (vscanFrameCount || 0) + 1;
+  if (vscanFrameCount % 6 !== 0) return;
+  if (vscanCooldown) return;
   var video = document.getElementById('vscan-video');
   var canvas = document.getElementById('vscan-canvas');
   if (!video || !canvas) return;
-  if (video.readyState < 2 || video.videoWidth === 0) { vscanRAF = requestAnimationFrame(vscanTick); return; }
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  if (video.readyState < 2 || video.videoWidth === 0) return;
+  var w = video.videoWidth, h = video.videoHeight;
+  canvas.width = w; canvas.height = h;
   var ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, 0, 0, w, h);
   var img;
-  try { img = ctx.getImageData(0, 0, canvas.width, canvas.height); } catch(e) { vscanRAF = requestAnimationFrame(vscanTick); return; }
-  var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-  if (code && code.data) { stopVerifyScan(); processVerifyResult(code.data); return; }
-  vscanRAF = requestAnimationFrame(vscanTick);
+  try { img = ctx.getImageData(0, 0, w, h); } catch(e) { return; }
+  var code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
+  if (code && code.data) {
+    vscanCooldown = true;
+    processVerifyResult(code.data);
+    setTimeout(function(){ vscanCooldown = false; }, 2000);
+  }
 }
 
 function doManualVerify() {
@@ -121,12 +136,11 @@ function processVerifyResult(text) {
       });
     }
   });
-  if (!foundPl || !foundC) { showToast('Carton tidak dijumpai.'); if (vscanMode === 'cam') setTimeout(startVerifyScan, 1200); return; }
-  scannedMap[foundC.id] = Date.now();
+  if (!foundPl || !foundC) { showToast('⚠️ Carton not found.'); return; }
+  scannedMap[foundC.id] = { ts: Date.now(), by: workerName || '—' };
   saveScanned();
   renderVerifyList();
   showToast('✅ BOX ' + String(foundC.boxNo).padStart(3,'0') + ' — ' + (foundC.totalPcs||0) + ' PCS');
-  if (vscanMode === 'cam') setTimeout(startVerifyScan, 1200);
 }
 
 function saveScanned() {
@@ -151,29 +165,60 @@ function renderVerifyList() {
   html += '</div>';
   html += '<div style="height:8px;background:#e5e7eb;border-radius:99px;overflow:hidden;margin-bottom:14px">';
   html += '<div style="height:100%;width:' + pct + '%;background:var(--green);border-radius:99px;transition:width .3s"></div></div>';
-  if (sorted.length === 0) { html += '<p style="text-align:center;color:#aaa;padding:12px">Tiada karton.</p>'; }
+  if (sorted.length === 0) { html += '<p style="text-align:center;color:#aaa;padding:12px">No cartons.</p>'; }
   else {
     sorted.forEach(function(c) {
-      var done = !!scannedMap[c.id];
+      var scanEntry = scannedMap[c.id];
+      var done = !!scanEntry;
+      // support old format (timestamp number) and new format ({ts, by})
+      var verifiedBy = done ? (typeof scanEntry === 'object' ? (scanEntry.by || '—') : '—') : '';
       var boxStr = String(c.boxNo).padStart(3,'0');
       var items = (c.items && c.items.length) ? c.items : [{ style: c.style||'', colour: c.colour||'', totalPcs: c.totalPcs||0 }];
       var styleStr = Array.from(new Set(items.map(function(it){ return it.style||''; }))).filter(Boolean).join(' / ');
       html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1.5px solid ' + (done ? '#86efac' : '#e5e7eb') + ';background:' + (done ? '#f0fdf4' : '#fafafa') + ';margin-bottom:7px">';
       html += '<span style="font-size:1.3rem">' + (done ? '✅' : '⬜') + '</span>';
       html += '<div style="flex:1"><div style="font-weight:800;font-size:.88rem">BOX ' + boxStr + ' <span style="font-weight:400;color:#666;font-size:.82rem">' + styleStr + '</span></div>';
-      html += '<div style="font-size:.75rem;color:#888">' + (c.totalPcs||0) + ' PCS</div></div>';
+      html += '<div style="font-size:.75rem;color:var(--text-muted)">' + (c.totalPcs||0) + ' PCS';
+      if (c.createdBy) html += ' &nbsp;·&nbsp; 📝 <b>' + c.createdBy + '</b>';
+      if (done && verifiedBy) html += ' &nbsp;·&nbsp; ✅ <b>' + verifiedBy + '</b>';
+      html += '</div></div>';
       if (done) html += '<button onclick="unscanVerify(\'' + c.id + '\')" style="border:none;background:none;color:#bbb;font-size:.8rem;cursor:pointer;padding:4px 8px">&#x2715;</button>';
       html += '</div>';
     });
   }
-  html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset Semua Scan</button>';
+  if (pl.status === 'completed') {
+    html += '<div style="margin-top:10px;padding:12px;background:#f0fdf4;border:2px solid #86efac;border-radius:10px;text-align:center">';
+    html += '<div style="font-size:1.2rem;font-weight:800;color:#16a34a">✅ Loading Completed</div>';
+    html += '<div style="font-size:.78rem;color:#555;margin-top:4px">This PL is locked. View only.</div>';
+    html += '</div>';
+  } else {
+    if (allDone) {
+      html += '<button onclick="finishLoading(\'' + pl.id + '\')" style="margin-top:10px;width:100%;padding:14px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:800;cursor:pointer;letter-spacing:.3px">🏁 Finish Loading</button>';
+    }
+    html += '<button onclick="resetVerifyPL(\'' + pl.id + '\')" style="margin-top:8px;width:100%;padding:9px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#aaa;font-size:.78rem;cursor:pointer">Reset All Scans</button>';
+  }
   html += '</div>';
   el.innerHTML = html;
 }
 
+function finishLoading(plId) {
+  if (!confirm('Mark this PL as completed? No more edits will be allowed.')) return;
+  var pl = pls.find(function(p){ return p.id === plId; });
+  if (!pl) return;
+  pl.status = 'completed';
+  pl.completedAt = new Date().toISOString();
+  selectedPLId = null;
+  localStorage.removeItem('selected_pl_id');
+  save();
+  syncToSupabase();
+  stopVerifyScan();
+  showToast('✅ PL marked as completed!');
+  showHome();
+}
+
 function unscanVerify(ctnId) { delete scannedMap[ctnId]; saveScanned(); renderVerifyList(); }
 function resetVerifyPL(plId) {
-  if (!confirm('Reset semua scan untuk PL ini?')) return;
+  if (!confirm('Reset all scans for this PL?')) return;
   var pl = pls.find(function(p){ return p.id === plId; });
   if (!pl) return;
   pl.cartons.forEach(function(c){ delete scannedMap[c.id]; });
@@ -183,14 +228,14 @@ function resetVerifyPL(plId) {
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f0f4f8;color:#1a2332;min-height:100vh}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 :root{
-  --blue:#1e3a5f;--blue-light:#4e8ef7;--green:#22c55e;--red:#ef4444;
+  --blue:#1e3a5f;--blue-light:#2563eb;--green:#16a34a;--red:#dc2626;
   --yellow:#f59e0b;--border:#2a3a4e;--bg:#0f1923;--card:#1a2535;
   --text:#e2e8f0;--text-muted:#94a3b8;
-  --radius:14px;--shadow:0 2px 12px rgba(0,0,0,.4);
+  --radius:14px;--shadow:0 2px 12px rgba(0,0,0,.3);
 }
-body{background:var(--bg);color:var(--text);}
+body{color:var(--text);background:var(--bg)}
 
 /* ── HEADER ── */
 .header{background:var(--blue);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
@@ -199,30 +244,36 @@ body{background:var(--bg);color:var(--text);}
 .btn-icon{background:rgba(255,255,255,.15);border:none;color:#fff;width:38px;height:38px;border-radius:50%;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .btn-icon:active{background:rgba(255,255,255,.3)}
 
+/* ── PULL TO REFRESH ── */
+#ptr-indicator{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:center;background:var(--blue);color:#fff;font-size:.82rem;font-weight:700;height:0;overflow:hidden;z-index:200;transition:height .2s;gap:8px}
+#ptr-indicator.show{height:44px}
+#ptr-spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 /* ── SCREEN MANAGEMENT ── */
 .screen{display:none;min-height:calc(100vh - 60px)}
 .screen.active{display:block}
 
 /* ── CARDS ── */
 .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin:12px;padding:16px}
-.card-title{font-size:.85rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+.card-title{font-size:.85rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
 
 /* ── PL SELECT LIST ── */
-.pl-btn{display:block;width:100%;background:#fff;border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;text-align:left;cursor:pointer;transition:border-color .15s}
-.pl-btn:active{background:#f0f4f8}
-.pl-btn.selected{border-color:var(--blue-light);background:#eff6ff}
+.pl-btn{display:block;width:100%;background:var(--card);border:2px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;text-align:left;cursor:pointer;transition:border-color .15s;color:var(--text)}
+.pl-btn:active{background:#243447}
+.pl-btn.selected{border-color:var(--blue-light);background:#1a2e47}
 .pl-btn-name{font-size:1rem;font-weight:800;color:var(--blue);margin-bottom:4px}
-.pl-btn-sub{font-size:.78rem;color:#64748b}
+.pl-btn-sub{font-size:.78rem;color:var(--text-muted)}
 .pl-btn-badge{display:inline-block;background:#e0f2fe;color:#0369a1;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:20px;margin-top:6px}
 
 /* ── SETUP SCREEN ── */
 .setup-card{margin:20px 16px;background:var(--card);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow)}
 .setup-icon{font-size:3rem;text-align:center;margin-bottom:12px}
 .setup-title{font-size:1.1rem;font-weight:800;text-align:center;color:var(--blue);margin-bottom:6px}
-.setup-desc{font-size:.82rem;color:#64748b;text-align:center;margin-bottom:20px;line-height:1.5}
+.setup-desc{font-size:.82rem;color:var(--text-muted);text-align:center;margin-bottom:20px;line-height:1.5}
 .field-group{margin-bottom:14px}
-.field-lbl{font-size:.75rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
-.field-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;transition:border-color .15s}
+.field-lbl{font-size:.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.field-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;transition:border-color .15s;background:var(--card);color:var(--text)}
 .field-inp:focus{border-color:var(--blue-light)}
 
 /* ── BUTTONS ── */
@@ -231,34 +282,34 @@ body{background:var(--bg);color:var(--text);}
 .btn-primary{background:var(--blue);color:#fff;padding:15px 20px;font-size:1rem;width:100%;border-radius:12px}
 .btn-green{background:var(--green);color:#fff;padding:15px 20px;font-size:1rem;width:100%;border-radius:12px}
 .btn-red{background:var(--red);color:#fff;padding:8px 14px;font-size:.82rem;border-radius:8px}
-.btn-ghost{background:#f1f5f9;color:#334155;padding:12px 16px;font-size:.88rem;border-radius:10px}
-.btn-outline{background:#fff;color:var(--blue-light);border:2px solid var(--blue-light);padding:13px 20px;font-size:.95rem;width:100%;border-radius:12px}
+.btn-ghost{background:#243447;color:var(--text);padding:12px 16px;font-size:.88rem;border-radius:10px}
+.btn-outline{background:transparent;color:var(--blue-light);border:2px solid var(--blue-light);padding:13px 20px;font-size:.95rem;width:100%;border-radius:12px}
 .btn-row{display:flex;gap:10px;margin-top:12px}
 .btn-row .btn{flex:1}
 
 /* ── FORM ── */
 .form-section{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
 .form-label{font-size:.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;display:block}
-.form-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:1.1rem;font-weight:700;font-family:inherit;outline:none;background:#0f1923;color:var(--text);}
+.form-inp{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:1.1rem;font-weight:700;font-family:inherit;outline:none;background:var(--card);color:var(--text)}
 .form-inp:focus{border-color:var(--blue-light)}
-.form-inp.big{font-size:1.6rem;text-align:center;padding:16px;background:#0f1923;color:var(--text);}
-.form-inp[readonly]{background:#1a2535;color:var(--text-muted)}
+.form-inp.big{font-size:1.6rem;text-align:center;padding:16px}
+.form-inp[readonly]{background:var(--bg);color:var(--text-muted)}
 
 /* ── SIZE GRID ── */
 .size-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:8px 0}
 .size-cell{display:flex;flex-direction:column;align-items:center;gap:3px}
 .size-lbl{font-size:.65rem;font-weight:800;color:var(--blue-light);text-transform:uppercase}
-.size-inp{width:100%;padding:10px 2px;border:1.5px solid var(--border);border-radius:8px;font-size:1rem;font-weight:700;text-align:center;outline:none;font-family:inherit;background:#0f1923;color:var(--text);}
+.size-inp{width:100%;padding:10px 2px;border:1.5px solid var(--border);border-radius:8px;font-size:1rem;font-weight:700;text-align:center;outline:none;font-family:inherit;background:var(--card);color:var(--text)}
 .size-inp:focus{border-color:var(--blue-light)}
 
 /* ── ITEM BLOCK ── */
-.item-block{background:#1a2535;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.item-block{background:#243447;border:1.5px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
 .item-block-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
 .item-num{font-size:.82rem;font-weight:800;color:var(--blue);text-transform:uppercase;letter-spacing:.5px}
 .item-subtotal{font-size:.8rem;font-weight:700;color:var(--green);text-align:right;margin-top:8px}
 
 /* ── SELECT ── */
-.form-select{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-weight:700;font-family:inherit;outline:none;background:#0f1923;color:var(--text);-webkit-appearance:none}
+.form-select{width:100%;padding:13px 14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-weight:700;font-family:inherit;outline:none;background:var(--card);color:var(--text);-webkit-appearance:none}
 .form-select:focus{border-color:var(--blue-light)}
 
 /* ── PROGRESS BAR ── */
@@ -275,13 +326,13 @@ body{background:var(--bg);color:var(--text);}
 .status-dot.green{background:var(--green)}
 .status-dot.red{background:var(--red)}
 
-/* ── KARTON LIST ── */
+/* ── CARTON LIST ── */
 .ctn-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
 .ctn-row:last-child{border-bottom:none}
 .ctn-boxno{width:44px;height:44px;background:var(--blue);color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0}
 .ctn-info{flex:1;min-width:0}
-.ctn-style{font-size:.88rem;font-weight:700;color:#1a2332;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ctn-sub{font-size:.73rem;color:#64748b;margin-top:2px}
+.ctn-style{font-size:.88rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctn-sub{font-size:.73rem;color:var(--text-muted);margin-top:2px}
 .ctn-pcs{font-size:.88rem;font-weight:800;color:var(--green);flex-shrink:0}
 
 /* ── BOTTOM NAV ── */
@@ -316,9 +367,15 @@ body{background:var(--bg);color:var(--text);}
 .home-card{display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:16px;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .12s;width:100%;text-align:center}
 .home-card:active{transform:scale(.97);box-shadow:none}
 .home-card-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.6rem}
-.home-card-title{font-weight:800;font-size:.95rem;color:#1e293b}
+.home-card-title{font-weight:800;font-size:.95rem;color:var(--text)}
 .home-card-sub{font-size:.72rem;color:#94a3b8;line-height:1.4}
 
+
+@keyframes scanline {
+  0% { top: 0%; }
+  50% { top: calc(100% - 2px); }
+  100% { top: 0%; }
+}
 </style>
 <link rel="manifest" href="data:application/json,{
   %22name%22: %22Export System%22,
@@ -340,25 +397,42 @@ body{background:var(--bg);color:var(--text);}
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Export System">
 <script>
-// Force clear old caches
-if ('caches' in window) {
-  caches.keys().then(function(names) { names.forEach(function(n){ caches.delete(n); }); });
-}
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(function(regs) { regs.forEach(function(r){ r.unregister(); }); });
-}
-
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
-    var swCode = 'const CACHE="es-v2";const FILES=["/"];self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));self.addEventListener("fetch",e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));';
-    var blob = new Blob([swCode], {type: 'application/javascript'});
-    var url = URL.createObjectURL(blob);
-    navigator.serviceWorker.register(url);
+    try {
+      var swCode = 'const CACHE="es-v1";const FILES=["/"];self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES))));self.addEventListener("fetch",e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));';
+      var blob = new Blob([swCode], {type: 'application/javascript'});
+      var url = URL.createObjectURL(blob);
+      navigator.serviceWorker.register(url).catch(function(){});
+    } catch(e) {}
   });
 }
 </script>
 </head>
 <body>
+
+<!-- ════ SCREEN: LOGIN ════ -->
+<div class="screen active" id="screen-login">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:32px 24px;background:var(--bg)">
+    <div style="font-size:3.5rem;margin-bottom:8px">📦</div>
+    <div style="font-size:1.4rem;font-weight:900;color:var(--blue);margin-bottom:4px">Export System</div>
+    <div style="font-size:.82rem;color:#94a3b8;margin-bottom:32px">Warehouse Mobile App</div>
+    <div style="background:var(--card);border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.3);padding:24px;width:100%;max-width:360px">
+      <div style="font-size:1rem;font-weight:800;color:var(--text);margin-bottom:6px">👤 Enter Your Name</div>
+      <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:16px">Your name will be recorded for each activity.</div>
+      <input type="text" id="login-name-input" class="field-inp" placeholder="e.g. Ahmad, Siti, Ali..."
+        style="font-size:1.1rem;text-transform:uppercase;margin-bottom:16px"
+        oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter')submitLogin()" autocomplete="off" />
+      <button class="btn btn-primary" onclick="submitLogin()" style="width:100%;padding:14px;font-size:1rem;border-radius:12px">
+        ✅ Start Working
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- PULL TO REFRESH INDICATOR -->
+<div id="ptr-indicator"><div id="ptr-spinner"></div><span id="ptr-text">Release to refresh</span></div>
 
 <!-- HEADER -->
 <div class="header" id="main-header">
@@ -366,7 +440,11 @@ if ('serviceWorker' in navigator) {
     <div class="header-title">📦 Export System</div>
     <div class="header-sub" id="header-sub">Loading...</div>
   </div>
-  <button class="btn-icon" onclick="showSetup()" title="Setup Supabase">⚙️</button>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button class="btn-icon" onclick="showChangeName()" title="Change Name" id="btn-name" style="font-size:.75rem;width:auto;padding:0 10px;border-radius:20px;display:none">👤 <span id="header-worker-name"></span></button>
+    <button class="btn-icon" onclick="logout()" title="Log Out" id="btn-logout" style="font-size:.75rem;width:auto;padding:0 10px;border-radius:20px;display:none;background:#dc2626;color:#fff">🚪</button>
+    <button class="btn-icon" onclick="showSetup()" title="Setup Supabase">⚙️</button>
+  </div>
 </div>
 
 <!-- TOAST -->
@@ -381,10 +459,10 @@ if ('serviceWorker' in navigator) {
 <!-- ════ SCREEN: SETUP ════ -->
 <div class="screen" id="screen-setup">
   <div class="setup-card">
-    <button onclick="backFromSetup()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:0 0 14px 0;cursor:pointer;display:flex;align-items:center;gap:5px">← Balik</button>
+    <button onclick="backFromSetup()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:0 0 14px 0;cursor:pointer;display:flex;align-items:center;gap:5px">← Back</button>
     <div class="setup-icon">🔗</div>
     <div class="setup-title">Setup Supabase</div>
-    <div class="setup-desc">Masukkan URL dan API Key untuk sambung ke database yang sama dengan sistem utama.</div>
+    <div class="setup-desc">Enter the URL and API Key to connect to the same database as the main system.</div>
     <div class="field-group">
       <div class="field-lbl">Supabase URL</div>
       <input type="url" class="field-inp" id="setup-url" placeholder="https://xxxx.supabase.co" inputmode="url" autocomplete="off" autocorrect="off" autocapitalize="none" />
@@ -393,9 +471,9 @@ if ('serviceWorker' in navigator) {
       <div class="field-lbl">Anon Key</div>
       <input type="text" class="field-inp" id="setup-key" placeholder="eyJ..." autocomplete="off" autocorrect="off" autocapitalize="none" />
     </div>
-    <button class="btn btn-primary" onclick="saveSetup()">🔗 Sambung</button>
+    <button class="btn btn-primary" onclick="saveSetup()">🔗 Connect</button>
     <div style="margin-top:12px">
-      <button class="btn btn-ghost" style="width:100%" onclick="skipSetup()">Guna data tempatan sahaja</button>
+      <button class="btn btn-ghost" style="width:100%" onclick="skipSetup()">Use local data only</button>
     </div>
   </div>
 </div>
@@ -406,7 +484,7 @@ if ('serviceWorker' in navigator) {
     <!-- Status bar -->
     <div class="status-bar" style="background:var(--card);border-radius:10px;box-shadow:var(--shadow);margin-bottom:20px">
       <div class="status-dot" id="sb-dot"></div>
-      <span id="sb-label">Tidak connect</span>
+      <span id="sb-label">Not connected</span>
       <span style="margin-left:auto;color:#94a3b8;font-size:.7rem" id="last-sync"></span>
       <button onclick="syncNow()" style="border:none;background:none;color:#94a3b8;font-size:.8rem;cursor:pointer;padding:0 4px">🔄</button>
       <button onclick="showSetup()" style="border:none;background:none;color:#94a3b8;font-size:.8rem;cursor:pointer;padding:0 4px">⚙️</button>
@@ -414,27 +492,27 @@ if ('serviceWorker' in navigator) {
 
     <!-- PL info -->
     <div id="home-pl-info" style="display:none;background:var(--card);border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--blue-light)">
-      <div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;margin-bottom:4px">Packing List Aktif</div>
+      <div style="font-size:.7rem;color:#94a3b8;text-transform:uppercase;font-weight:700;margin-bottom:4px">Active Packing List</div>
       <div style="font-weight:800;color:var(--blue);font-size:1rem" id="home-pl-name">—</div>
-      <div style="font-size:.75rem;color:#64748b;margin-top:2px" id="home-pl-sub">—</div>
-      <button onclick="showPLSelect()" style="margin-top:8px;border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;padding:0;cursor:pointer">Tukar PL →</button>
+      <div style="font-size:.75rem;color:var(--text-muted);margin-top:2px" id="home-pl-sub">—</div>
+      <button onclick="showPLSelect()" style="margin-top:8px;border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;padding:0;cursor:pointer">Change PL →</button>
     </div>
     <div id="home-no-pl" style="background:#fff8e1;border-radius:12px;padding:14px 16px;margin-bottom:16px;box-shadow:var(--shadow);border-left:4px solid var(--yellow)">
-      <div style="font-size:.82rem;color:#92400e;font-weight:700">⚠️ Belum pilih Packing List</div>
-      <button onclick="showPLSelect()" style="margin-top:6px;border:none;background:var(--yellow);color:#fff;font-size:.8rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer">Pilih PL Sekarang</button>
+      <div style="font-size:.82rem;color:#92400e;font-weight:700">⚠️ No Packing List selected</div>
+      <button onclick="showPLSelect()" style="margin-top:6px;border:none;background:var(--yellow);color:#fff;font-size:.8rem;font-weight:700;padding:6px 14px;border-radius:8px;cursor:pointer">Select PL Now</button>
     </div>
 
     <!-- Grid menu -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <button class="home-card" onclick="selectedPLId ? showForm() : showPLSelect()">
         <div class="home-card-icon" style="background:linear-gradient(135deg,#2563eb,#1e40af)">✏️</div>
-        <div class="home-card-title">Input Karton</div>
-        <div class="home-card-sub">Tambah & simpan karton baru</div>
+        <div class="home-card-title">Input Carton</div>
+        <div class="home-card-sub">Add & save new carton</div>
       </button>
       <button class="home-card" onclick="showVerify()">
         <div class="home-card-icon" style="background:linear-gradient(135deg,#16a34a,#15803d)">🔍</div>
         <div class="home-card-title">Loading Verify</div>
-        <div class="home-card-sub">Scan & verify karton dimuatkan</div>
+        <div class="home-card-sub">Scan & verify loaded cartons</div>
       </button>
     </div>
 
@@ -442,11 +520,11 @@ if ('serviceWorker' in navigator) {
     <div id="home-stats" style="display:none;margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div style="background:var(--card);border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
         <div style="font-size:1.6rem;font-weight:900;color:var(--blue-light)" id="home-stat-ctn">0</div>
-        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Karton</div>
+        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Cartons</div>
       </div>
       <div style="background:var(--card);border-radius:10px;padding:14px;box-shadow:var(--shadow);text-align:center">
         <div style="font-size:1.6rem;font-weight:900;color:var(--green)" id="home-stat-scan">0</div>
-        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Dah Verify</div>
+        <div style="font-size:.72rem;color:#94a3b8;font-weight:600">Verified</div>
       </div>
     </div>
   </div>
@@ -455,12 +533,12 @@ if ('serviceWorker' in navigator) {
 <!-- ════ SCREEN: PL SELECT ════ -->
 <div class="screen" id="screen-pl">
   <div style="padding:12px 12px 4px">
-    <button onclick="showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Balik</button>
+    <button onclick="showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Back</button>
   </div>
   <div class="card">
-    <div class="card-title">📋 Pilih Packing List</div>
+    <div class="card-title">📋 Select Packing List</div>
     <div id="pl-list-container">
-      <p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">Tiada PL. Buat dulu dari sistem utama.</p>
+      <p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">No PL found. Create from the main system first.</p>
     </div>
     <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="syncNow()">🔄 Refresh Data</button>
   </div>
@@ -477,7 +555,7 @@ if ('serviceWorker' in navigator) {
   </div>
   <div style="padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border)">
     <div style="display:flex;justify-content:space-between;align-items:center;font-size:.78rem">
-      <span style="color:#64748b">Karton diinput</span>
+      <span style="color:var(--text-muted)">Karton diinput</span>
       <div style="display:flex;gap:8px;align-items:center">
         <button onclick="showList()" style="border:none;background:none;color:var(--blue-light);font-size:.75rem;font-weight:700;cursor:pointer">Lihat Senarai →</button>
         <span id="form-progress" style="font-weight:800;color:var(--blue-light)">0 / 0</span>
@@ -487,49 +565,56 @@ if ('serviceWorker' in navigator) {
   </div>
   <div style="padding:12px;padding-bottom:30px">
     <div class="form-section">
-      <label class="form-label">📦 Ref No.</label>
-      <input type="text" class="form-inp big" id="f-refno" placeholder="e.g. KFA-001" style="font-size:1.6rem" />
+      <label class="form-label">🟠 REF NO.</label>
+      <input type="text" class="form-inp big" id="f-refno" inputmode="text" placeholder="cth: A1, 07, REF-001" autocomplete="off" />
+    </div>
+    <div class="form-section">
+      <label class="form-label">📦 BOX NO.</label>
+      <input type="number" class="form-inp big" id="f-boxno" readonly style="background:var(--bg);color:var(--text-muted);cursor:not-allowed" />
     </div>
     <div id="form-items"></div>
-    <button class="btn btn-ghost" style="width:100%;margin-bottom:12px" onclick="addItem()">+ Add Another Item</button>
-    <div style="background:#1a3a5e;border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-weight:700;color:#0369a1">GRAND TOTAL PCS</span>
-      <span style="font-size:1.4rem;font-weight:800;color:#0369a1"><span id="form-grand">0</span> PCS</span>
+    <button class="btn btn-ghost" style="width:100%;margin-bottom:12px" onclick="addItem()">＋ Add More Items</button>
+    <div style="background:var(--blue);border-radius:10px;padding:12px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700;color:#fff">GRAND TOTAL PCS</span>
+      <span style="font-size:1.4rem;font-weight:800;color:#38bdf8"><span id="form-grand">0</span> PCS</span>
     </div>
     <div class="form-section">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
-          <label class="form-label">Weight (KG)</label>
+          <label class="form-label">⚖️ Weight (KG)</label>
           <input type="number" class="form-inp" id="f-weight" inputmode="decimal" placeholder="0.00" step="0.01" />
         </div>
         <div>
-          <label class="form-label">Measure (CM)</label>
-          <input type="text" class="form-inp" id="f-measure" placeholder="72x46x31.5" value="72x46x31.5" />
+          <label class="form-label">📐 Measure (CM)</label>
+          <input type="text" class="form-inp" id="f-measure" placeholder="72x46x31.5" />
         </div>
       </div>
     </div>
     <div class="btn-row">
-      <button class="btn btn-green" style="flex:2" onclick="submitCarton(false)">✅ Save</button>
-      <button class="btn btn-primary" style="flex:1" onclick="submitCarton(true)">🖨️ Save + Print Label</button>
+      <button class="btn btn-green" style="flex:2" id="form-save-btn" onclick="submitCarton(false)">✅ Save</button>
+      <button class="btn btn-outline" style="flex:1" onclick="submitCarton(true)">🖨️ Save + Print Label</button>
+    </div>
+    <div style="padding:0 0 12px">
+      <button class="btn btn-grey" id="form-cancel-btn" style="display:none;width:100%;margin-top:8px" onclick="cancelEdit()">✕ Cancel Edit</button>
     </div>
   </div>
 </div>
 
-<!-- ════ SCREEN: KARTON LIST ════ -->
+<!-- ════ SCREEN: CARTON LIST ════ -->
 <div class="screen" id="screen-list">
   <div style="padding:12px 12px 4px">
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn btn-ghost" style="padding:10px 14px" onclick="showForm()">← Input</button>
       <div style="flex:1">
         <div style="font-weight:800;font-size:.95rem;color:var(--blue)" id="list-pl-name">—</div>
-        <div style="font-size:.72rem;color:#64748b" id="list-pl-sub">—</div>
+        <div style="font-size:.72rem;color:var(--text-muted)" id="list-pl-sub">—</div>
       </div>
       <button class="btn btn-ghost" style="padding:10px 14px" onclick="showHome()">Home</button>
     </div>
   </div>
   <div class="card">
     <div id="ctn-list-wrap">
-      <p style="color:#94a3b8;text-align:center;padding:20px">Tiada karton lagi.</p>
+      <p style="color:#94a3b8;text-align:center;padding:20px">No cartons yet.</p>
     </div>
   </div>
 </div>
@@ -537,7 +622,7 @@ if ('serviceWorker' in navigator) {
 <!-- ════ SCREEN: LOADING VERIFY ════ -->
 <div class="screen" id="screen-verify">
   <div style="padding:12px 12px 4px">
-    <button onclick="stopVerifyScan(); showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Balik</button>
+    <button onclick="stopVerifyScan(); showHome()" style="border:none;background:none;color:var(--blue-light);font-weight:700;font-size:.9rem;padding:8px 0;cursor:pointer;display:flex;align-items:center;gap:6px">← Back</button>
   </div>
   <div style="padding:0 12px">
     <div style="background:#eff6ff;border-radius:12px;padding:12px 16px;margin-bottom:4px;border-left:4px solid var(--blue-light);display:flex;justify-content:space-between;align-items:center">
@@ -545,30 +630,45 @@ if ('serviceWorker' in navigator) {
         <div style="font-size:.7rem;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:2px">Packing List</div>
         <div style="font-weight:800;color:var(--blue);font-size:1rem" id="verify-pl-name">—</div>
       </div>
-      <button onclick="showPLSelect()" style="border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;cursor:pointer">Tukar →</button>
+      <button onclick="showPLSelect()" style="border:none;background:none;color:var(--blue-light);font-size:.78rem;font-weight:700;cursor:pointer">Change →</button>
     </div>
-    <div class="card">
-      <div class="card-title">🔍 Scan Carton QR</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button id="vtab-cam" class="btn btn-primary" style="flex:1;font-size:.85rem" onclick="setVerifyMode('cam')">📷 Camera</button>
-        <button id="vtab-scanner" class="btn btn-ghost" style="flex:1;font-size:.85rem" onclick="setVerifyMode('scanner')">🔌 Manual</button>
-      </div>
-      <div id="vmode-cam">
-        <div id="vscan-video-wrap" style="display:none;position:relative;width:100%;max-width:400px;margin:0 auto 12px;border-radius:10px;overflow:hidden;background:#000">
-          <video id="vscan-video" style="width:100%;display:block" playsinline autoplay muted></video>
-          <canvas id="vscan-canvas" style="display:none"></canvas>
-          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
-            <div style="width:200px;height:200px;border:3px solid rgba(255,255,255,.7);border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.4)"></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <!-- Camera view - full width -->
+      <div id="vscan-video-wrap" style="position:relative;width:100%;background:#000;display:none">
+        <video id="vscan-video" style="width:100%;display:block;max-height:60vw;object-fit:cover" playsinline autoplay muted></video>
+        <canvas id="vscan-canvas" style="display:none"></canvas>
+        <!-- Scanning frame overlay -->
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+          <div style="position:relative;width:65%;aspect-ratio:1">
+            <div style="position:absolute;inset:0;box-shadow:0 0 0 9999px rgba(0,0,0,.55)"></div>
+            <!-- Corner marks -->
+            <div style="position:absolute;top:0;left:0;width:28px;height:28px;border-top:3px solid #fff;border-left:3px solid #fff;border-radius:4px 0 0 0"></div>
+            <div style="position:absolute;top:0;right:0;width:28px;height:28px;border-top:3px solid #fff;border-right:3px solid #fff;border-radius:0 4px 0 0"></div>
+            <div style="position:absolute;bottom:0;left:0;width:28px;height:28px;border-bottom:3px solid #fff;border-left:3px solid #fff;border-radius:0 0 0 4px"></div>
+            <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:3px solid #fff;border-right:3px solid #fff;border-radius:0 0 4px 0"></div>
+            <!-- Scan line -->
+            <div id="scan-line" style="position:absolute;left:0;right:0;top:0;height:2px;background:rgba(37,99,235,.85);animation:scanline 1.8s linear infinite"></div>
           </div>
         </div>
-        <button id="vscan-start-btn" class="btn btn-primary" style="width:100%;padding:14px;font-size:1rem" onclick="startVerifyScan()">📷 Buka Kamera</button>
-        <button id="vscan-stop-btn" class="btn btn-ghost" style="width:100%;display:none;margin-top:8px" onclick="stopVerifyScan()">⏹ Stop Kamera</button>
+        <!-- Stop button overlay -->
+        <button onclick="stopVerifyScan()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center">✕</button>
+        <p style="position:absolute;bottom:10px;left:0;right:0;text-align:center;color:rgba(255,255,255,.7);font-size:.75rem;margin:0">Point camera at QR code</p>
       </div>
-      <div id="vmode-scanner" style="display:none">
-        <input type="text" id="vmanual-input" placeholder="Scan atau taip QR text..."
-          style="width:100%;padding:14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;margin-bottom:8px"
-          onkeydown="if(event.key==='Enter') doManualVerify()" />
-        <button class="btn btn-primary" style="width:100%" onclick="doManualVerify()">✅ Submit</button>
+      <!-- Buttons when camera is off -->
+      <div id="vscan-controls" style="padding:14px">
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button id="vtab-cam" class="btn btn-primary" style="flex:1;font-size:.85rem" onclick="setVerifyMode('cam')">📷 Camera</button>
+          <button id="vtab-scanner" class="btn btn-ghost" style="flex:1;font-size:.85rem" onclick="setVerifyMode('scanner')">🔌 Manual</button>
+        </div>
+        <div id="vmode-cam">
+          <button id="vscan-start-btn" class="btn btn-primary" style="width:100%;padding:14px;font-size:1rem" onclick="startVerifyScan()">📷 Open Camera</button>
+        </div>
+        <div id="vmode-scanner" style="display:none">
+          <input type="text" id="vmanual-input" placeholder="Scan or type QR text..."
+            style="width:100%;padding:14px;border:2px solid var(--border);border-radius:10px;font-size:.95rem;font-family:inherit;outline:none;margin-bottom:8px"
+            onkeydown="if(event.key==='Enter') doManualVerify()" />
+          <button class="btn btn-primary" style="width:100%" onclick="doManualVerify()">✅ Submit</button>
+        </div>
       </div>
     </div>
     <div id="verify-list-wrap"></div>
@@ -595,7 +695,7 @@ const ITEMS = [
   'BMTB MODERN FIT','BMTB CLASSIC FIT','BMCM MODERN FIT','BMCM CLASSIC FIT',
   'MEN TOP','TOP QUARTER','COLLARED TOP',
   'BMTB BOY','BMCM BOY','BMTB BABY BOY',
-  'WOMEN KEBAYA','WOMEN KURUNG KEDAH','WOMEN KURUNG RIAU',
+  'WOMEN KEBAYA','WOMEN KURUNG KEDONE','WOMEN KURUNG RIAU',
   'GIRL BAJU KEBAYA','GIRL BAJU KURUNG','BABY GIRL BAJU KURUNG'
 ];
 
@@ -605,13 +705,14 @@ var SB_KEY = localStorage.getItem('sb_key') || '';
 var pls = [];
 var scannedMap = {};
 var selectedPLId = null;
+var lastSaveTime = 0;
 var itemCounter = 0;
 var _gtTimer = null;
 
 // ══ UTILS ══
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 function v(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
-function toast(msg, dur) {
+function showToast(msg, dur) {
   var t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
@@ -665,31 +766,26 @@ function loadFromSupabase(cb) {
 function saveSetup() {
   var url = document.getElementById('setup-url').value.trim().replace(/\/$/, '');
   var key = document.getElementById('setup-key').value.trim();
-  if (!url || !key) { toast('⚠️ Sila isi URL dan Key!'); return; }
+  if (!url || !key) { showToast('⚠️ Sila isi URL dan Key!'); return; }
   SB_URL = url; SB_KEY = key;
   localStorage.setItem('sb_url', SB_URL);
   localStorage.setItem('sb_key', SB_KEY);
-  toast('🔄 Menyambung...');
+  showToast('🔄 Menyambung...');
   loadFromSupabase(function(ok) {
     updateStatus();
-    if (ok) { toast('✅ Berjaya! Data dimuatkan.'); showPLSelect(); }
-    else { toast('⚠️ Gagal sambung. Semak URL/Key.'); }
+    if (ok) { showToast('✅ Berjaya! Data diloadkan.'); showPLSelect(); }
+    else { showToast('⚠️ Gagal connect. Semak URL/Key.'); }
   });
 }
 function skipSetup() {
   if (pls.length > 0) showHome();
-  else { toast('Tiada data tempatan.'); }
+  else { showToast('Tiada data tempatan.'); }
 }
-function showSetup() {
-  document.getElementById('setup-url').value = SB_URL;
-  document.getElementById('setup-key').value = SB_KEY;
-  showScreen('screen-setup');
-  document.getElementById('bottom-nav').style.display = 'none';
-}
+// showSetup defined below
 function backFromSetup() {
   if (selectedPLId) { showForm(); }
   else if (pls.length > 0) { showPLSelect(); }
-  else { toast('Sambung Supabase dulu untuk muat data.'); }
+  else { showToast('Connect Supabase dulu for load data.'); }
 }
 
 // ══ STATUS ══
@@ -698,42 +794,41 @@ function updateStatus() {
   var lbl = document.getElementById('sb-label');
   var connected = !!(SB_URL && SB_KEY);
   if (dot) { dot.className = 'status-dot ' + (connected ? 'green' : 'red'); }
-  if (lbl) { lbl.textContent = connected ? '🟢 Supabase connected' : '🔴 Tidak connect'; }
+  if (lbl) { lbl.textContent = connected ? '🟢 Supabase connected' : '🔴 Not connected'; }
   var sub = document.getElementById('header-sub');
   if (sub) { sub.textContent = connected ? 'Supabase ✓' : 'Offline mode'; }
 }
 function syncNow() {
-  if (!SB_URL || !SB_KEY) { toast('⚠️ Belum setup Supabase.'); return; }
-  toast('🔄 Syncing...');
+  if (!SB_URL || !SB_KEY) { showToast('⚠️ Belum setup Supabase.'); return; }
+  showToast('🔄 Syncing...');
   loadFromSupabase(function(ok) {
-    if (ok) { renderPLList(); toast('✅ Data terkini!'); } else { toast('❌ Gagal sync.'); }
+    if (ok) { renderPLList(); showToast('✅ Data terkini!'); } else { showToast('❌ Gagal sync.'); }
   });
   var el = document.getElementById('last-sync');
   if (el) { el.textContent = 'Sync: ' + new Date().toLocaleTimeString('ms-MY', {hour:'2-digit',minute:'2-digit'}); }
 }
 
-// ══ SCREEN MANAGEMENT ══
 function showScreen(id) {
-  if (id !== 'screen-verify') stopVerifyScan();
   document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
   var el = document.getElementById(id);
   if (el) el.classList.add('active');
 }
-// showPLSelect defined below
-// showForm defined below
-// showList defined below
-// goBack/goBackFromList defined below
 
 
 // ══ PL LIST ══
 function renderPLList() {
   var el = document.getElementById('pl-list-container');
   if (!el) return;
+  var activePls = pls.filter(function(pl){ return pl.status !== 'completed'; });
   if (pls.length === 0) {
-    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">Tiada PL. Buat dulu dari sistem utama.</p>';
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">No PL found. Create from the main system first.</p>';
     return;
   }
-  el.innerHTML = pls.map(function(pl) {
+  if (activePls.length === 0) {
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px;font-size:.88rem">All PLs completed. Contact supervisor to unlock.</p>';
+    return;
+  }
+  el.innerHTML = activePls.map(function(pl) {
     var packed = pl.cartons.length;
     var total = pl.total || packed;
     var pct = total > 0 ? Math.round(packed / total * 100) : 0;
@@ -741,7 +836,7 @@ function renderPLList() {
     return '<button class="pl-btn' + sel + '" onclick="selectPL(\'' + pl.id + '\')">'
       + '<div class="pl-btn-name">' + pl.name + '</div>'
       + '<div class="pl-btn-sub">' + (pl.invNo || '—') + ' &bull; ' + (pl.dest || '—') + '</div>'
-      + '<span class="pl-btn-badge">' + packed + ' karton diinput</span>'
+      + '<span class="pl-btn-badge">' + packed + ' cartons entered</span>'
       + '<div class="prog-bg" style="margin-top:8px"><div class="prog-fill" style="width:' + pct + '%"></div></div>'
       + '</button>';
   }).join('');
@@ -756,19 +851,60 @@ function selectPL(id) {
 function updateFormHeader() {
   var pl = getPL(selectedPLId);
   if (!pl) return;
-  document.getElementById('form-pl-name').textContent = pl.name;
-  document.getElementById('form-pl-sub').textContent = (pl.invNo || '') + ' | ' + (pl.dest || '');
+  document.getElementById('form-pl-name').textContent = editingCartonId ? '✏️ Edit Carton' : pl.name;
+  document.getElementById('form-pl-sub').textContent = editingCartonId ? pl.name : (pl.invNo || '') + ' | ' + (pl.dest || '');
   var packed = pl.cartons.length;
   var total = pl.total || '—';
   document.getElementById('form-progress').textContent = packed + ' / ' + total;
   var pct = pl.total > 0 ? Math.round(packed / pl.total * 100) : 0;
   document.getElementById('form-prog-fill').style.width = pct + '%';
 }
-function initForm() {
+// ══ EDIT CARTON ══
+var editingCartonId = null;
+
+function openEditCarton(cartonId) {
   var pl = getPL(selectedPLId);
   if (!pl) return;
-  var nextRef = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) + 1 : 1;
-  var fRefEl = document.getElementById('f-refno'); if (fRefEl) fRefEl.value = String(nextRef);
+  var c = pl.cartons.find(function(x){ return x.id === cartonId; });
+  if (!c) return;
+  editingCartonId = cartonId;
+  // If boxNo null (old data), assign based on position in list
+  if (!c.boxNo) {
+    var idx = pl.cartons.findIndex(function(x){ return x.id === cartonId; });
+    c.boxNo = idx + 1;
+  }
+  document.getElementById('f-refno').value = c.refNo || '';
+  document.getElementById('f-boxno').value = c.boxNo;
+  document.getElementById('f-weight').value = c.weight || '';
+  document.getElementById('f-measure').value = c.measure || '72x46x31.5';
+  document.getElementById('form-items').innerHTML = '';
+  itemCounter = 0;
+  var items = c.items && c.items.length ? c.items : [{ style: c.style||'', colorCode: c.colorCode||'', colorName: c.colorName||'', sizes: c.sizes||{}, pcs: c.totalPcs||0 }];
+  items.forEach(function(it){ addItem(it); });
+  document.getElementById('form-save-btn').textContent = '✏️ Update Box';
+  document.getElementById('form-cancel-btn').style.display = '';
+  updateFormHeader();
+  showScreen('screen-form');
+}
+
+function cancelEdit() {
+  editingCartonId = null;
+  document.getElementById('form-save-btn').textContent = '✅ Save';
+  document.getElementById('form-cancel-btn').style.display = 'none';
+  showScreen('screen-list');
+}
+
+function initForm() {
+  editingCartonId = null;
+  var el = document.getElementById('form-save-btn');
+  if (el) el.textContent = '✅ Save';
+  var cel = document.getElementById('form-cancel-btn');
+  if (cel) cel.style.display = 'none';
+  var pl = getPL(selectedPLId);
+  if (!pl) return;
+  var nextBox = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return c.boxNo; })) + 1 : 1;
+  document.getElementById('f-refno').value = '';
+  document.getElementById('f-boxno').value = nextBox;
   document.getElementById('f-weight').value = '';
   document.getElementById('f-measure').value = '72x46x31.5';
   clearItems();
@@ -777,7 +913,7 @@ function initForm() {
 
 // ══ ITEM ROWS ══
 function itemOpts() {
-  return '<option value="">-- Pilih Item --</option>' + ITEMS.map(function(i){ return '<option value="' + i + '">' + i + '</option>'; }).join('');
+  return '<option value="">-- Select Item --</option>' + ITEMS.map(function(i){ return '<option value="' + i + '">' + i + '</option>'; }).join('');
 }
 function addItem(data) {
   data = data || {};
@@ -798,7 +934,7 @@ function addItem(data) {
   div.id = 'irow-' + id;
   div.innerHTML = '<div class="item-block-head">'
     + '<span class="item-num">Item ' + rowNum + '</span>'
-    + (rowNum > 1 ? '<button class="btn btn-red" onclick="removeItem(\'irow-' + id + '\')">✕ Remove</button>' : '')
+    + (rowNum > 1 ? '<button class="btn btn-red" onclick="removeItem(\'irow-' + id + '\')">✕ Buang</button>' : '')
     + '</div>'
     + '<div style="margin-bottom:10px">'
     + '<label class="form-label">Item Description</label>'
@@ -808,7 +944,7 @@ function addItem(data) {
     + '<div><label class="form-label">Color Code</label>'
     + '<input type="text" class="form-inp ir-ccode" placeholder="63" inputmode="numeric" value="' + (data.colorCode || '') + '" oninput="autoFillColor(this)" /></div>'
     + '<div><label class="form-label">Color Name</label>'
-    + '<input type="text" class="form-inp ir-cname" placeholder="Auto-fill" readonly style="background:#f8faff;font-size:.9rem" value="' + (data.colorName || '') + '" /></div>'
+    + '<input type="text" class="form-inp ir-cname" placeholder="Auto-fill" readonly style="background:var(--bg);font-size:.9rem" value="' + (data.colorName || '') + '" /></div>'
     + '</div>'
     + '<label class="form-label">Qty Per Size</label>'
     + '<div class="size-grid">' + sizeGrid + '</div>'
@@ -889,28 +1025,86 @@ function getItemsData() {
 // ══ SUBMIT CARTON ══
 function submitCarton(doPrint) {
   var pl = getPL(selectedPLId);
-  if (!pl) { toast('⚠️ Pilih PL dulu!'); return; }
-  var refNo = (v('f-refno')||'').trim();
-  var autoBoxNo = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return c.boxNo||0; })) + 1 : 1;
-
+  if (!pl) { showToast('⚠️ Select a PL first!'); return; }
+  var boxNo = parseInt(v('f-boxno'));
+  if (!boxNo) { showToast('⚠️ Enter Box No!'); return; }
   var items = getItemsData();
-  if (!items.length || !items[0].style) { toast('⚠️ Sila pilih Item Description!'); return; }
+  if (!items.length || !items[0].style) { showToast('⚠️ Select Item Description!'); return; }
   var tPcs = items.reduce(function(s, it){ return s + it.pcs; }, 0);
 
-  var carton = {
-    id: uid(), boxNo: autoBoxNo, refNo: refNo, items: items,
-    totalPcs: tPcs,
-    weight: v('f-weight'),
-    measure: v('f-measure'),
-    ts: new Date().toISOString()
-  };
-  pl.cartons.push(carton);
-  pl.cartons.sort(function(a, b){ return a.boxNo - b.boxNo; });
-  save();
-  toast('✅ Box ' + String(autoBoxNo).padStart(3, '0') + ' disimpan!');
-  if (doPrint) printLabel(pl, carton);
-  initForm(); // auto-increment & reset
-  updateFormHeader();
+  // EDIT MODE — update existing carton
+  if (editingCartonId) {
+    var ci = pl.cartons.findIndex(function(x){ return x.id === editingCartonId; });
+    if (ci !== -1) {
+      pl.cartons[ci].refNo = v('f-refno');
+      pl.cartons[ci].boxNo = boxNo;
+      pl.cartons[ci].items = items;
+      pl.cartons[ci].totalPcs = tPcs;
+      pl.cartons[ci].weight = v('f-weight');
+      pl.cartons[ci].measure = v('f-measure');
+    }
+    save();
+    showToast('✅ BOX ' + String(boxNo).padStart(3,'0') + ' updated!');
+    editingCartonId = null;
+    document.getElementById('form-save-btn').textContent = '✅ Save';
+    document.getElementById('form-cancel-btn').style.display = 'none';
+    renderCartonList();
+    showScreen('screen-list');
+    return;
+  }
+
+  // Show saving indicator
+  showToast('Saving...');
+
+  // Fetch latest from Supabase first (fetch-then-merge)
+  function doSave(latestPls) {
+    // Merge latest into local pls
+    if (latestPls) {
+      pls = latestPls;
+      localStorage.setItem('export_pls', JSON.stringify(pls));
+    }
+    var freshPL = getPL(selectedPLId);
+    if (!freshPL) { showToast('PL not found!'); return; }
+
+    // Auto-resolve box number conflict
+    var takenNos = freshPL.cartons.map(function(c){ return c.boxNo; });
+    var assignedBox = boxNo;
+    if (takenNos.indexOf(assignedBox) !== -1) {
+      // Find next available number
+      while (takenNos.indexOf(assignedBox) !== -1) { assignedBox++; }
+      showToast('Box ' + String(boxNo).padStart(3,'0') + ' taken → assigned BOX ' + String(assignedBox).padStart(3,'0'));
+    }
+
+    var carton = {
+      id: uid(), refNo: v('f-refno'), boxNo: assignedBox, items: items,
+      totalPcs: tPcs,
+      weight: v('f-weight'),
+      measure: v('f-measure'),
+      ts: new Date().toISOString(),
+      createdBy: workerName || '—'
+    };
+    freshPL.cartons.push(carton);
+    freshPL.cartons.sort(function(a,b){ return a.boxNo - b.boxNo; });
+    save();
+    if (takenNos.indexOf(boxNo) === -1) {
+      showToast('✅ BOX ' + String(assignedBox).padStart(3,'0') + ' saved!');
+    }
+    if (doPrint) printLabel(freshPL, carton);
+    initForm();
+    updateFormHeader();
+  }
+
+  if (SB_URL && SB_KEY) {
+    fetch(SB_URL + '/rest/v1/export_data?key=eq.main&select=value', { headers: sbHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(rows){
+        var data = rows && rows[0] && rows[0].value;
+        doSave(data && Array.isArray(data.pls) ? data.pls : null);
+      })
+      .catch(function(){ doSave(null); });
+  } else {
+    doSave(null);
+  }
 }
 
 // ══ CARTON LIST ══
@@ -918,10 +1112,10 @@ function renderCartonList() {
   var pl = getPL(selectedPLId);
   if (!pl) return;
   document.getElementById('list-pl-name').textContent = pl.name;
-  document.getElementById('list-pl-sub').textContent = pl.cartons.length + ' karton diinput | ' + (pl.invNo || '') + ' | ' + (pl.dest || '');
+  document.getElementById('list-pl-sub').textContent = pl.cartons.length + ' cartons entered | ' + (pl.invNo || '') + ' | ' + (pl.dest || '');
   var el = document.getElementById('ctn-list-wrap');
   if (pl.cartons.length === 0) {
-    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">Tiada karton lagi.</p>';
+    el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">No cartons yet.</p>';
     return;
   }
   var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
@@ -937,7 +1131,10 @@ function renderCartonList() {
       + '</div>'
       + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'
       + '<div class="ctn-pcs">' + (c.totalPcs || 0) + ' PCS</div>'
+      + '<div style="display:flex;gap:6px">'
+      + '<button class="btn btn-primary" style="padding:5px 10px;font-size:.72rem" onclick="openEditCarton(\'' + c.id + '\')">✏️</button>'
       + '<button class="btn btn-ghost" style="padding:5px 10px;font-size:.72rem" onclick="printLabelById(\'' + pl.id + '\',\'' + c.id + '\')">🖨️</button>'
+      + '</div>'
       + '</div>'
       + '</div>';
   }).join('');
@@ -1032,9 +1229,34 @@ function showHome() {
   showScreen('screen-home');
   updateHomeCards();
 }
+function showPLSelect() {
+  renderPLList();
+  showScreen('screen-pl');
+}
+function showForm() {
+  if (!selectedPLId) { showPLSelect(); return; }
+  initForm();
+  showScreen('screen-form');
+}
+function showList() {
+  renderCartonList();
+  showScreen('screen-list');
+}
+function showVerify() {
+  var activePls = pls.filter(function(pl){ return pl.status !== 'completed'; });
+  if (activePls.length === 0 && pls.length > 0) {
+    showToast('All PLs completed. Cannot verify.');
+    return;
+  }
+  if (!vscanPLId && selectedPLId) vscanPLId = selectedPLId;
+  initVerifyPage();
+  showScreen('screen-verify');
+}
+function goBack() { showHome(); }
 
 function updateHomeCards() {
   var pl = selectedPLId ? pls.find(function(p){ return p.id === selectedPLId; }) : null;
+  if (pl && pl.status === 'completed') { selectedPLId = null; localStorage.removeItem('selected_pl_id'); pl = null; }
   var infoEl = document.getElementById('home-pl-info');
   var noPlEl = document.getElementById('home-no-pl');
   if (pl) {
@@ -1054,74 +1276,308 @@ function updateHomeCards() {
     if (statsEl) statsEl.style.display = 'grid';
   } else {
     if (infoEl) infoEl.style.display = 'none';
-    if (noPlEl) noPlEl.style.display = '';
-    var statsEl = document.getElementById('home-stats');
-    if (statsEl) statsEl.style.display = 'none';
+     if (noPlEl) noPlEl.style.display = '';
+    var statsEl2 = document.getElementById('home-stats');
+    if (statsEl2) statsEl2.style.display = 'none';
   }
 }
 
-function showScreen(id) {
-  if (id !== 'screen-verify') stopVerifyScan();
-  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
-  var el = document.getElementById(id);
-  if (el) el.classList.add('active');
+// ══ SUPABASE ══
+var SB_URL = localStorage.getItem('sb_url') || '';
+var SB_KEY = localStorage.getItem('sb_key') || '';
+function sbHeaders() {
+  return { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
+}
+function buildCartonRows(pl, c) {
+  var items = c.items || [];
+  if (items.length === 0) items = [{}];
+  return items.map(function(it, idx) {
+    var sz = it.sizes || {};
+    return {
+      id: c.id + '_' + idx,
+      carton_id: c.id,
+      pl_id: pl.id,
+      pl_name: pl.name || '',
+      box_no: c.boxNo || null,
+      ref_no: c.refNo || null,
+      style: it.style || null,
+      color_code: it.colorCode || null,
+      color_name: it.colorName || null,
+      size_xs: sz['XS'] || 0,
+      size_s: sz['S'] || 0,
+      size_m: sz['M'] || 0,
+      size_l: sz['L'] || 0,
+      size_xl: sz['XL'] || 0,
+      size_2xl: sz['2XL'] || 0,
+      size_3xl: sz['3XL'] || 0,
+      size_4xl: sz['4XL'] || 0,
+      size_5xl: sz['5XL'] || 0,
+      size_6xl: sz['6XL'] || 0,
+      pcs: it.pcs || 0,
+      weight: c.weight || null,
+      measure: c.measure || null,
+      ts: c.ts ? new Date(c.ts).toISOString() : null,
+      created_by: c.createdBy || null,
+      verified_by: c.verifiedBy || null
+    };
+  });
+}
+function syncToSupabase(onDone) {
+  if (!SB_URL || !SB_KEY) { if (onDone) onDone(false); return; }
+  if (!pls.length) { if (onDone) onDone(true); return; }
+  lastSaveTime = Date.now();
+
+  var plPayload = pls.map(function(pl) {
+    return { id: pl.id, name: pl.name || '', status: pl.status || 'active',
+      total_boxes: pl.total || 0, carton_count: (pl.cartons || []).length,
+      data: pl, updated_at: new Date().toISOString() };
+  });
+  var cRows = [];
+  pls.forEach(function(pl) {
+    (pl.cartons || []).forEach(function(c) {
+      buildCartonRows(pl, c).forEach(function(r) { cRows.push(r); });
+    });
+  });
+  var plIds = pls.map(function(pl) { return pl.id; }).join(',');
+  var authHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+
+  fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
+    .then(function(r){ if (!r.ok) r.text().then(function(t){ console.error('PL sync:', r.status, t); }); })
+    .catch(function(e){ console.error('PL sync error:', e); });
+
+  fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t){ console.error('Carton delete error:', r.status, t); showToast('⚠️ Sync gagal (' + r.status + ')'); });
+      if (!cRows.length) { if (onDone) onDone(true); return; }
+      return fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: authHeaders, body: JSON.stringify(cRows) })
+        .then(function(r2) {
+          if (!r2.ok) r2.text().then(function(t){ console.error('Carton insert error:', r2.status, t); showToast('⚠️ Sync gagal (' + r2.status + ')'); });
+          if (onDone) onDone(true);
+        });
+    })
+    .catch(function(e){ console.error('Carton sync error:', e); if (onDone) onDone(false); });
+}
+function loadFromSupabase(cb) {
+  if (!SB_URL || !SB_KEY) { cb(false); return; }
+  fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
+    .then(function(r){ return r.json(); })
+    .then(function(plRows) {
+      if (!Array.isArray(plRows) || plRows.length === 0) { cb(false); return; }
+      pls = plRows.map(function(row){ return row.data; }).filter(Boolean);
+      localStorage.setItem('export_pls', JSON.stringify(pls));
+      cb(true);
+    }).catch(function(){ cb(false); });
 }
 
+// ══ SETUP ══
 function showSetup() {
-  showScreen('screen-setup');
   var urlEl = document.getElementById('setup-url');
   var keyEl = document.getElementById('setup-key');
   if (urlEl) urlEl.value = SB_URL;
   if (keyEl) keyEl.value = SB_KEY;
+  showScreen('screen-setup');
 }
-
 function backFromSetup() { showHome(); }
 function skipSetup() { showHome(); }
-
-function showPLSelect() {
-  stopVerifyScan();
-  showScreen('screen-pl');
-  renderPLList();
-  updateStatus();
+function saveSetup() {
+  var url = document.getElementById('setup-url').value.trim().replace(/\/$/, '');
+  var key = document.getElementById('setup-key').value.trim();
+  if (!url || !key) { showToast('⚠️ Please enter URL and Key!'); return; }
+  SB_URL = url; SB_KEY = key;
+  localStorage.setItem('sb_url', SB_URL);
+  localStorage.setItem('sb_key', SB_KEY);
+  showToast('🔄 Connecting...');
+  loadFromSupabase(function(ok) {
+    updateStatus();
+    if (ok) { showToast('✅ Connected! Data loaded.'); showHome(); }
+    else { showToast('⚠️ Connect failed. Check URL/Key.'); }
+  });
+}
+function updateStatus() {
+  var connected = !!(SB_URL && SB_KEY);
+  var sub = document.getElementById('header-sub');
+  if (sub) sub.textContent = connected ? 'Supabase ✓' : 'Offline mode';
+  var dot = document.getElementById('sb-dot');
+  var lbl = document.getElementById('sb-label');
+  if (dot) dot.className = 'status-dot ' + (connected ? 'green' : 'red');
+  if (lbl) lbl.textContent = connected ? '🟢 Supabase connected' : '🔴 Not connected';
 }
 
-function showForm() {
-  if (!selectedPLId) { showPLSelect(); return; }
-  showScreen('screen-form');
-  updateFormHeader();
+// ══ STORAGE ══
+function load() {
+  var p = localStorage.getItem('export_pls');
+  var s = localStorage.getItem('export_scanned');
+  var pid = localStorage.getItem('selected_pl_id');
+  if (p) pls = JSON.parse(p);
+  if (s) scannedMap = JSON.parse(s);
+  if (pid) selectedPLId = pid;
+}
+function save() {
+  localStorage.setItem('export_pls', JSON.stringify(pls));
+  if (selectedPLId) localStorage.setItem('selected_pl_id', selectedPLId);
+  syncToSupabase();
 }
 
-function showList() {
-  if (!selectedPLId) { showPLSelect(); return; }
-  showScreen('screen-list');
-  renderCartonList();
+// ══ WORKER NAME / LOGIN ══
+var workerName = '';
+
+function submitLogin() {
+  var inp = document.getElementById('login-name-input');
+  var name = inp ? inp.value.trim() : '';
+  if (!name) { showToast('⚠️ Please enter your name!'); return; }
+  workerName = name.toUpperCase();
+  localStorage.setItem('worker_name', workerName);
+  updateWorkerNameUI();
+  document.getElementById('main-header').style.display = '';
+  // After login, proceed normally
+  if (!SB_URL && !SB_KEY) {
+    showSetup();
+  } else {
+    showHome();
+  }
 }
 
-function showVerify() {
-  showScreen('screen-verify');
-  initVerifyPage();
+function showChangeName() {
+  var newName = prompt('Enter your name:', workerName);
+  if (newName && newName.trim()) {
+    workerName = newName.trim().toUpperCase();
+    localStorage.setItem('worker_name', workerName);
+    updateWorkerNameUI();
+    showToast('✅ Name updated: ' + workerName);
+  }
 }
 
-function goBack() { showHome(); }
-function goBackFromList() { showForm(); }
+function updateWorkerNameUI() {
+  var nameEl = document.getElementById('header-worker-name');
+  var btnName = document.getElementById('btn-name');
+  var btnLogout = document.getElementById('btn-logout');
+  if (nameEl) nameEl.textContent = workerName;
+  if (btnName) btnName.style.display = workerName ? '' : 'none';
+  if (btnLogout) btnLogout.style.display = workerName ? '' : 'none';
+}
 
+function logout() {
+  if (!confirm('Log out sebagai ' + workerName + '?')) return;
+  workerName = '';
+  localStorage.removeItem('worker_name');
+  updateWorkerNameUI();
+  document.getElementById('main-header').style.display = 'none';
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+  document.getElementById('screen-login').classList.add('active');
+  document.getElementById('login-name-input').value = '';
+  showToast('👋 Logged out');
+}
 
+// ══ PULL TO REFRESH ══
+(function() {
+  var startY = 0, pulling = false, threshold = 70;
+  var indicator = null, ptrText = null;
+
+  function doRefresh() {
+    if (ptrText) ptrText.textContent = 'Refreshing...';
+    loadFromSupabase(function(ok) {
+      if (ok) {
+        var screen = document.querySelector('.screen.active');
+        if (screen) {
+          var id = screen.id;
+          if (id === 'screen-home') updateHomeCards();
+          if (id === 'screen-list') renderCartonList();
+          if (id === 'screen-verify') renderVerifyList();
+          if (id === 'screen-pl') renderPLList();
+        }
+        showToast('✅ Refreshed!');
+      } else {
+        showToast('⚠️ Refresh failed.');
+      }
+      if (indicator) indicator.classList.remove('show');
+      pulling = false;
+    });
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    if (window.scrollY === 0) {
+      startY = e.touches[0].clientY;
+      pulling = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!pulling) return;
+    if (!indicator) { indicator = document.getElementById('ptr-indicator'); ptrText = document.getElementById('ptr-text'); }
+    var dist = e.touches[0].clientY - startY;
+    if (dist > 10 && window.scrollY === 0) {
+      indicator.classList.add('show');
+      ptrText.textContent = dist > threshold ? 'Release to refresh' : 'Pull down to refresh';
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function(e) {
+    if (!pulling) return;
+    var dist = (e.changedTouches[0].clientY - startY);
+    if (dist > threshold && window.scrollY === 0) {
+      doRefresh();
+    } else {
+      if (indicator) indicator.classList.remove('show');
+      pulling = false;
+    }
+  });
+})();
+
+// ══ WINDOW ONLOAD ══
 window.onload = function() {
   load();
+  workerName = localStorage.getItem('worker_name') || '';
+  updateWorkerNameUI();
   if (SB_URL && SB_KEY) {
     loadFromSupabase(function(ok) {
       if (ok) showToast('Data loaded.');
     });
   }
   updateStatus();
-  if (!SB_URL && !SB_KEY) {
+  // If no name saved, show login screen first
+  if (!workerName) {
+    showScreen('screen-login');
+    var inp = document.getElementById('login-name-input');
+    if (inp) setTimeout(function(){ inp.focus(); }, 300);
+  } else if (!SB_URL && !SB_KEY) {
     showSetup();
   } else {
     showHome();
   }
+  if (SB_URL && SB_KEY) {
+    var _isSyncing = false;
+    function autoSync() {
+      if (_isSyncing) return;
+      _isSyncing = true;
+      // 1. Push local data to Supabase first
+      syncToSupabase(function() {
+        // 2. Only pull if no local save in last 5s
+        if (Date.now() - lastSaveTime > 5000) {
+          loadFromSupabase(function(ok) {
+            _isSyncing = false;
+            if (ok) {
+              var screen = document.querySelector('.screen.active');
+              if (screen) {
+                var id = screen.id;
+                if (id === 'screen-form') updateFormHeader();
+                if (id === 'screen-list') renderCartonList();
+                if (id === 'screen-home') updateHomeCards();
+                if (id === 'screen-verify') renderVerifyList();
+              }
+            }
+          });
+        } else {
+          _isSyncing = false;
+        }
+      });
+    }
+    setInterval(autoSync, 8000);
+    document.addEventListener('visibilitychange', function() {
+      if (document.visibilityState === 'visible') autoSync();
+    });
+    window.addEventListener('focus', autoSync);
+  }
 };
 </script>
-
-<div id="print-label-area-out" class="print-label-area"></div>
 </body>
 </html>
