@@ -907,10 +907,12 @@ function syncToSheets(onDone) {
         cRows.forEach(function(row) {
           if (row.id && deletedCartonIds.indexOf(row.id) === -1) { deletedCartonIds.push(row.id); }
         });
+        // Safety: NEVER treat currently-live cartons as deleted,
+        // even if deleted_cartons table has stale/wrong IDs
+        var liveCartonIds = [];
+        pls.forEach(function(pl) { (pl.cartons||[]).forEach(function(c){ liveCartonIds.push(c.id); }); });
+        deletedCartonIds = deletedCartonIds.filter(function(id){ return liveCartonIds.indexOf(id) === -1; });
         saveDeletedCartonIds();
-        // NOTE: We do NOT filter pls here during push — that caused live cartons to be
-        // incorrectly removed if deleted_cartons table had stale/mismatched IDs.
-        // Filtering is handled in mergeFromSheets (pull phase) only.
       }
       _doSync(onDone);
     })
