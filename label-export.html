@@ -1373,7 +1373,7 @@ function saveCarton(doPrint) {
   const carton = {
     id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
     totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
-    ts: new Date().toISOString(),
+    ts: editId ? ((pl.cartons.find(function(x){ return x.id === editId; })||{}).ts || new Date().toISOString()) : new Date().toISOString(),
     createdBy: editId ? undefined : (currentUser ? currentUser.name : '—')
   };
   if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
