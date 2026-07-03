@@ -2122,172 +2122,9 @@ function downloadPDF() {
     + '</style></head><body>'
     + docHtml
     + '<script>window.onload=function(){window.print();}<\/script>'
-    + '</body></html>');
+    + '</body></html>
+');
   win.document.close();
-}
-
-
-// ══ DOWNLOAD EXCEL ══
-function downloadExcel() {
-  var plId = document.getElementById('export-pl-select') ? document.getElementById('export-pl-select').value : '';
-  var plsToExport = plId ? pls.filter(function(p){ return p.id === plId; }) : pls;
-  if (plsToExport.length === 0) { toast('Pilih PL dulu!'); return; }
-
-  var BDR = 'border:1px solid #333;';
-  var TH  = BDR+'background:#b8d4f0;font-weight:bold;text-align:center;padding:4px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
-  var TD  = BDR+'background:#fffacd;padding:3px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
-  var TDC = BDR+'background:#fffacd;padding:3px 4px;font-size:9pt;text-align:center;vertical-align:middle;font-family:Arial;';
-  var TDM = BDR+'background:#dce6f7;font-weight:bold;text-align:center;padding:3px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
-  var TOT = BDR+'background:#ffffff;font-weight:bold;text-align:center;padding:3px 4px;font-size:9pt;vertical-align:middle;font-family:Arial;';
-  var GRN = BDR+'background:#d4edda;font-weight:bold;text-align:center;padding:4px 4px;font-size:9pt;font-family:Arial;';
-  var GRNL= BDR+'background:#d4edda;font-weight:bold;text-align:right;padding:4px 6px;font-size:9pt;font-family:Arial;';
-  var INFO= 'border:none;padding:3px 4px;font-size:9pt;font-family:Arial;';
-
-  var html = '﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">';
-  html += '<head><meta charset="UTF-8"><style>table{border-collapse:collapse;}td,th{word-wrap:break-word;}</style></head><body>';
-
-  plsToExport.forEach(function(pl, pIdx) {
-    var sorted = pl.cartons.slice().sort(function(a,b){
-      var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
-      if (ad !== bd) return ad.localeCompare(bd);
-      var ai = getCartonItems(a), bi = getCartonItems(b);
-      var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
-      var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-      return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
-    });
-    var grandPcs=0, grandGW=0;
-    var sizeTotals={}; SIZES.forEach(function(s){ sizeTotals[s]=0; });
-    if (pIdx>0) html += '<br><br>';
-
-    var nc = 5 + SIZES.length + 4;
-
-    html += '<table>';
-
-    // Title
-    html += '<tr><td colspan="'+nc+'" style="'+BDR+'text-align:center;font-size:14pt;font-weight:bold;padding:10px;background:#ffffff;font-family:Arial;">EXPORT PACKING LIST / 出口装箱单</td></tr>';
-
-    // Info rows
-    var invDate = pl.invDate || new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
-    var half = Math.floor(nc/2);
-    var half2 = nc - half;
-    html += '<tr>'
-      + '<td colspan="'+half+'" style="'+INFO+'"><b>EXPORTER / 出口商:</b> '+(pl.exporter||'TBC')+'</td>'
-      + '<td colspan="'+half2+'" style="'+INFO+'"><b>INVOICE NO. / 发票号:</b> '+(pl.invNo||'')+'</td>'
-      + '</tr>';
-    html += '<tr>'
-      + '<td colspan="'+half+'" style="'+INFO+'"><b>CONSIGNEE / 收货人:</b> '+(pl.consignee||'TBC')+'</td>'
-      + '<td colspan="'+half2+'" style="'+INFO+'"><b>INVOICE DATE/ 发票日期 :</b> '+invDate+'</td>'
-      + '</tr>';
-    html += '<tr><td colspan="'+nc+'" style="'+INFO+'"><b>DESTINATION / 目的地:</b> '+(pl.dest||'TBC')+'</td></tr>';
-    html += '<tr><td colspan="'+nc+'" style="border:none;height:4px;"></td></tr>';
-
-    // Header
-    html += '<tr>'
-      + '<th rowspan="2" style="'+TH+'width:80pt">容器和封条编号<br>CONTAINER &amp; SEAL NO.</th>'
-      + '<th rowspan="2" style="'+TH+'width:35pt">箱号<br>BOX NO.</th>'
-      + '<th rowspan="2" style="'+TH+'width:70pt">款号<br>STYLE NO.</th>'
-      + '<th rowspan="2" style="'+TH+'width:28pt">代码<br>CODE</th>'
-      + '<th rowspan="2" style="'+TH+'width:60pt">颜色<br>COLOR</th>'
-      + '<th colspan="'+SIZES.length+'" style="'+TH+'">尺寸<br>SIZE</th>'
-      + '<th rowspan="2" style="'+TH+'width:40pt">合计<br>TOTAL (PCS)</th>'
-      + '<th rowspan="2" style="'+TH+'width:28pt">箱数<br>CTN</th>'
-      + '<th rowspan="2" style="'+TH+'width:44pt">重量<br>WEIGHT (KG)</th>'
-      + '<th rowspan="2" style="'+TH+'width:56pt">纸箱规格<br>MEAS(CM)</th>'
-      + '</tr><tr>';
-    SIZES.forEach(function(s){ html += '<th style="'+TH+'width:22pt">'+s+'</th>'; });
-    html += '</tr>';
-
-    // Data rows
-    sorted.forEach(function(c, cIdx){
-      var displayBoxNo = String(cIdx + 1).padStart(3, '0');
-      var items = getCartonItems(c);
-      var rs = items.length || 1;
-      items.forEach(function(it){
-        SIZES.forEach(function(s){ sizeTotals[s] += (it.sizes&&it.sizes[s])||0; });
-      });
-      items.forEach(function(it, idx){
-        html += '<tr>';
-        if (idx===0) {
-          html += '<td rowspan="'+rs+'" style="'+TDM+'">'+(pl.container||'')+'</td>';
-          html += '<td rowspan="'+rs+'" style="'+TDM+'">'+displayBoxNo+'</td>';
-        }
-        html += '<td style="'+TD+'">'+(it.style||'')+'</td>';
-        html += '<td style="'+TDC+'">'+(it.colorCode||'')+'</td>';
-        html += '<td style="'+TD+'">'+(it.colorName||'')+'</td>';
-        SIZES.forEach(function(s){
-          var v=(it.sizes&&it.sizes[s])||0;
-          html += '<td style="'+TDC+'">'+(v||'')+'</td>';
-        });
-        if (idx===0) {
-          html += '<td rowspan="'+rs+'" style="'+TOT+'">'+(c.totalPcs||0)+'</td>';
-          html += '<td rowspan="'+rs+'" style="'+TOT+'">1</td>';
-          html += '<td rowspan="'+rs+'" style="'+TOT+'">'+(c.weight||'')+'</td>';
-          html += '<td rowspan="'+rs+'" style="'+TOT+'">'+(c.measure||'')+'</td>';
-        }
-        html += '</tr>';
-      });
-      grandPcs += (c.totalPcs||0);
-      grandGW += parseFloat(c.weight)||0;
-    });
-
-    // Total row
-    html += '<tr>';
-    html += '<td colspan="5" style="'+GRNL+'">TOTAL / 总计</td>';
-    SIZES.forEach(function(s){ html += '<td style="'+GRN+'">'+(sizeTotals[s]||'')+'</td>'; });
-    html += '<td style="'+GRN+'">'+grandPcs+'</td>';
-    html += '<td style="'+GRN+'">'+sorted.length+'</td>';
-    html += '<td style="'+GRN+'">'+grandGW.toFixed(2)+'</td>';
-    html += '<td style="'+GRN+'"></td>';
-    html += '</tr></table>';
-
-    // Summary
-    var cbm=sorted.reduce(function(s,c){var m=(c.measure||'').split(/[xX]/);if(m.length===3){var v=parseFloat(m[0])*parseFloat(m[1])*parseFloat(m[2])/1000000;return s+(isNaN(v)?0:v);}return s;},0);
-    var SUM = BDR+'background:#b8d4f0;font-weight:bold;padding:5px 8px;font-size:9pt;font-family:Arial;width:120pt;';
-    var SUMV= BDR+'font-weight:bold;padding:5px 10px;font-size:9pt;font-family:Arial;width:80pt;';
-    html += '<br><table style="border-collapse:collapse">';
-    html += '<tr><td style="'+SUM+'">NO OF CTN :</td><td style="'+SUMV+'">'+sorted.length+' CTN</td></tr>';
-    html += '<tr><td style="'+SUM+'">GROSS WEIGHT (KGS) :</td><td style="'+SUMV+'">'+grandGW.toFixed(2)+'</td></tr>';
-    html += '<tr><td style="'+SUM+'">MEASUREMENT (CBM):</td><td style="'+SUMV+'">'+cbm.toFixed(2)+'</td></tr>';
-    html += '</table>';
-  });
-
-  html += '</body></html>';
-  var blob = new Blob([html], {type:'application/vnd.ms-excel;charset=utf-8'});
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  var t=new Date(), d=String(t.getDate()).padStart(2,'0'), m=String(t.getMonth()+1).padStart(2,'0');
-  var fname = plsToExport.length===1 ? plsToExport[0].name : 'packing_report';
-  a.href=url; a.download=fname+'_'+t.getFullYear()+m+d+'.xls';
-  document.body.appendChild(a); a.click();
-  setTimeout(function(){ URL.revokeObjectURL(url); document.body.removeChild(a); },1000);
-  toast('Excel downloaded!');
-}
-
-
-// ══ AUTH ══
-var users = [];
-var currentUser = null;
-
-function togglePwd(inputId, btn) {
-  var inp = document.getElementById(inputId);
-  if (!inp) return;
-  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
-  else { inp.type = 'password'; btn.textContent = '👁'; }
-}
-
-function hashPwd(str) {
-  var hash = 5381;
-  for (var i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    hash = hash & hash;
-  }
-  return (hash >>> 0).toString(16);
-}
-
-function loadUsers() {
-  try { users = JSON.parse(localStorage.getItem('export_users')) || []; } catch(e) { users = []; }
-  // Normalize old users that have no status field
-  users.forEach(function(u){ if (!u.status) u.status = 'approved'; });
 }
 
 function saveUsersLocal() {
@@ -2321,34 +2158,25 @@ function syncUsers() {
 function loadUsersFromSupabase(cb) {
   if (!SB_URL || !SB_KEY) { if (cb) cb(false); return; }
   fetch(SB_URL + '/rest/v1/app_users?select=*', { headers: sbHeaders() })
-    .then(function(r){ return r.json(); })
+    .then(function(r) { return r.json(); })
     .then(function(rows) {
-      if (Array.isArray(rows) && rows.length > 0) {
-        users = rows.map(function(r) {
-          return {
-            id: r.id,
-            name: r.name,
-            username: r.username || (r.name || '').toLowerCase().replace(/\s+/g,'_'),
-            passwordHash: hashPwd(r.password || ''), // hash the stored plaintext for comparison
-            plainPassword: r.password || '',
-            role: r.role || 'user',
-            status: r.status || 'approved'
-          };
-        });
-        saveUsersLocal();
-        if (cb) cb(true);
-      } else { if (cb) cb(false); }
-    }).catch(function(){ if (cb) cb(false); });
-}
-
-function switchAuthTab(tab) {
-  var isLogin = tab === 'login';
-  document.getElementById('auth-login-form').style.display = isLogin ? '' : 'none';
-  document.getElementById('auth-register-form').style.display = isLogin ? 'none' : '';
-  document.getElementById('tab-login').style.background = isLogin ? '#1f6feb' : 'transparent';
-  document.getElementById('tab-login').style.color = isLogin ? '#fff' : '#8b949e';
-  document.getElementById('tab-register').style.background = isLogin ? 'transparent' : '#238636';
-  document.getElementById('tab-register').style.color = isLogin ? '#8b949e' : '#fff';
+      if (!Array.isArray(rows) || rows.length === 0) { if (cb) cb(false); return; }
+      users = rows.map(function(r) {
+        return {
+          id: r.id,
+          name: r.name,
+          username: r.username || (r.name || '').toLowerCase().replace(/\s+/g,'_'),
+          role: r.role || 'user',
+          status: r.status || 'approved',
+          plainPassword: r.password || '',
+          passwordHash: hashPwd(r.password || ''),
+          createdAt: r.created_at
+        };
+      });
+      saveUsersLocal();
+      if (cb) cb(true);
+    })
+    .catch(function() { if (cb) cb(false); });
 }
 
 function doLogin() {
@@ -2370,7 +2198,6 @@ function doLogin() {
     errEl.style.display = 'none';
     showMainApp();
   }
-  // Always reload from Supabase so status (pending/approved) is always current
   if (SB_URL && SB_KEY) {
     errEl.textContent = '⏳ Checking...'; errEl.style.display = '';
     loadUsersFromSupabase(function() { _tryLogin(); });
@@ -2388,7 +2215,6 @@ function doRegister() {
   errEl.style.display = 'none'; okEl.style.display = 'none';
   if (!name || !username || !password) { errEl.textContent = '⚠️ Fill all fields.'; errEl.style.display=''; return; }
   if (password.length < 4) { errEl.textContent = '⚠️ Password min. 4 characters.'; errEl.style.display=''; return; }
-
   function _finishRegister() {
     if (users.find(function(u){ return u.username === username; })) { errEl.textContent = '❌ Username already taken.'; errEl.style.display=''; okEl.style.display='none'; return; }
     var isFirst = users.length === 0;
@@ -2414,8 +2240,6 @@ function doRegister() {
     document.getElementById('reg-password').value = '';
     setTimeout(function(){ switchAuthTab('login'); document.getElementById('login-username').value = username; }, 1500);
   }
-
-  // Load latest users from Supabase first so we don't overwrite existing users
   if (SB_URL && SB_KEY) {
     okEl.textContent = '⏳ Checking...'; okEl.style.display = '';
     loadUsersFromSupabase(function(){ _finishRegister(); });
@@ -2455,7 +2279,6 @@ function editMyName() {
   toast('✅ Name updated to ' + newName);
 }
 
-
 function updatePendingBadge() {
   var pending = users.filter(function(u){ return u.status === 'pending'; }).length;
   var badge = document.getElementById('pending-badge');
@@ -2489,7 +2312,6 @@ function deleteUser(id) {
 }
 
 function renderUsersPage() {
-  // Pending section
   var pending = users.filter(function(u){ return u.status === 'pending'; });
   var pendingEl = document.getElementById('users-pending-section');
   if (pendingEl) {
@@ -2500,7 +2322,7 @@ function renderUsersPage() {
       pending.forEach(function(u) {
         html += '<tr>'
           + '<td>' + u.name + '</td>'
-          + '<td>@' + u.username + '</td>'
+          + '<td>@' + (u.username||'') + '</td>'
           + '<td>' + (u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—') + '</td>'
           + '<td style="display:flex;gap:6px">'
           + '<button class="btn btn-primary" style="padding:4px 12px;font-size:.78rem" onclick="approveUser(\'' + u.id + '\')">&#10003; Approve</button>'
@@ -2511,7 +2333,6 @@ function renderUsersPage() {
       pendingEl.innerHTML = html;
     }
   }
-  // All users section
   var allEl = document.getElementById('users-all-list');
   if (allEl) {
     if (users.length === 0) {
@@ -2524,13 +2345,12 @@ function renderUsersPage() {
         var isSelf = currentUser && u.id === currentUser.id;
         html += '<tr>'
           + '<td>' + u.name + (isSelf ? ' <span style="color:#8b949e;font-size:.72rem">(you)</span>' : '') + '</td>'
-          + '<td>@' + u.username + '</td>'
+          + '<td>@' + (u.username||'') + '</td>'
           + '<td><span style="color:' + (u.role === 'owner' ? '#f0c040' : u.role === 'admin' ? 'var(--blue)' : '#8b949e') + ';font-weight:' + (u.role === 'owner' ? '800' : '600') + '">' + (u.role || 'user') + '</span></td>'
           + '<td style="color:' + statusColor + '">' + statusLabel + '</td>'
           + '<td>' + (function(){
               var isOwnerViewer = currentUser && currentUser.role === 'owner';
               var isAdminViewer = currentUser && currentUser.role === 'admin';
-              // Owner sees all passwords; Admin sees user passwords only
               var canSee = isOwnerViewer || (isAdminViewer && u.role === 'user');
               return canSee && u.plainPassword
                 ? '<span style="font-family:monospace;background:#161b22;padding:2px 8px;border-radius:4px;font-size:.78rem">' + u.plainPassword + '</span>'
@@ -2538,7 +2358,6 @@ function renderUsersPage() {
             })() + '</td>'
           + (function(){
               if (isSelf) {
-                // Allow self to claim Owner if no owner exists yet
                 var hasOwner = users.some(function(x){ return x.role === 'owner'; });
                 if (!hasOwner && (currentUser.role === 'admin' || currentUser.role === 'user')) {
                   return '<td><button class="btn" style="padding:3px 10px;font-size:.75rem;background:#f0c040;color:#000;font-weight:800" onclick="claimOwner()">👑 Claim Owner</button></td>';
@@ -2558,11 +2377,11 @@ function renderUsersPage() {
               }
               return '<td style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">'
                 + roleSelect
-                + '<button class="btn" style="padding:3px 8px;font-size:.72rem" onclick="resetUserPassword(\'' + u.id + '\')">'+'Reset Pwd</button>'
-                + '<button class="btn" style="padding:3px 8px;font-size:.72rem;background:#f85149;color:#fff" onclick="deleteUser(\'' + u.id + '\')">'+'Delete</button>'
+                + '<button class="btn" style="padding:3px 8px;font-size:.72rem" onclick="resetUserPassword(\'' + u.id + '\')">Reset Pwd</button>'
+                + '<button class="btn" style="padding:3px 8px;font-size:.72rem;background:#f85149;color:#fff" onclick="deleteUser(\'' + u.id + '\')">Delete</button>'
                 + '</td>';
             })()
-              + '</tr>';
+          + '</tr>';
       });
       html += '</tbody></table>';
       allEl.innerHTML = html;
@@ -2651,7 +2470,6 @@ window.onload = function() {
   if (SB_URL && SB_KEY) {
     loadUsersFromSupabase(function() {
       _showAuthOrMain();
-      // Always sync on startup: push local then pull all from Supabase
       autoSyncTick();
     });
   } else {
@@ -2671,8 +2489,6 @@ window.onload = function() {
   }
 
   function mergeFromSheets(callback) {
-    // Pull from Supabase but ONLY update PLs that already exist locally.
-    // Never re-add a PL that was deleted locally. Also filter out deleted cartons.
     if (!SB_URL || !SB_KEY) { callback(false); return; }
     fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
       .then(function(r) { return r.json(); })
@@ -2682,10 +2498,9 @@ window.onload = function() {
         var changed = false;
         plRows.forEach(function(row) {
           if (!row.data) return;
-          if (deletedPLIds.indexOf(row.data.id) !== -1) return; // skip deleted PLs
+          if (deletedPLIds.indexOf(row.data.id) !== -1) return;
           var idx = localIds.indexOf(row.data.id);
           if (idx !== -1) {
-            // Update existing PL with latest from Supabase
             var merged = row.data;
             if (deletedCartonIds.length && merged.cartons) {
               merged.cartons = merged.cartons.filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
@@ -2693,7 +2508,6 @@ window.onload = function() {
             pls[idx] = merged;
             changed = true;
           } else {
-            // New PL from another user — add it to local
             var newPl = row.data;
             if (deletedCartonIds.length && newPl.cartons) {
               newPl.cartons = newPl.cartons.filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
@@ -2716,10 +2530,10 @@ window.onload = function() {
     _isSyncing = true;
     _isSyncingAt = Date.now();
     syncToSheets(function() {
-      if (Date.now() - _lastSaveTime > 5000) {
+      if (Date.now() - _lastSaveTime > 3000) {
         mergeFromSheets(function(ok) {
           _isSyncing = false;
-          if (ok) { renderDash(); renderExportSelect(); renderCartonListIfOpen(); }
+          if (ok) { renderAll(); }
         });
       } else {
         _isSyncing = false;
@@ -2727,66 +2541,7 @@ window.onload = function() {
     });
   }
 
-  setInterval(autoSyncTick, 8000);
-  document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible') autoSyncTick();
-  });
-  window.addEventListener('focus', autoSyncTick);
-};
-</script>
-</body>
-</html>
-ble') autoSyncTick();
-  });
-  window.addEventListener('focus', autoSyncTick);
-};
-</script>
-</body>
-</html>
-FromSheets(callback) {
-    // Pull from Supabase but ONLY update PLs that already exist locally.
-    // Never re-add a PL that was deleted locally — web is source of truth for deletions.
-    if (!SB_URL || !SB_KEY) { callback(false); return; }
-    fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
-      .then(function(r) { return r.json(); })
-      .then(function(plRows) {
-        if (!Array.isArray(plRows)) { callback(false); return; }
-        var localIds = pls.map(function(p) { return p.id; });
-        var changed = false;
-        plRows.forEach(function(row) {
-          if (!row.data) return;
-          if (deletedPLIds.indexOf(row.data.id) !== -1) return; // skip explicitly deleted
-          var idx = localIds.indexOf(row.data.id);
-          if (idx !== -1) { pls[idx] = row.data; changed = true; } // update existing only
-        });
-        if (changed) { localStorage.setItem('export_pls', JSON.stringify(pls)); callback(true); }
-        else callback(false);
-      })
-      .catch(function() { callback(false); });
-  }
-
-  function autoSyncTick() {
-    // Reset stuck flag after 15s
-    if (_isSyncing && Date.now() - _isSyncingAt > 15000) _isSyncing = false;
-    if (_isSyncing) return;
-    if (!SB_URL || !SB_KEY) return;
-    _isSyncing = true;
-    _isSyncingAt = Date.now();
-    // 1. Push local data to Supabase first
-    syncToSheets(function() {
-      // 2. Only pull if no local save happened in last 5s (avoid overwriting fresh edits)
-      if (Date.now() - _lastSaveTime > 5000) {
-        mergeFromSheets(function(ok) {
-          _isSyncing = false;
-          if (ok) { renderDash(); renderExportSelect(); renderCartonListIfOpen(); }
-        });
-      } else {
-        _isSyncing = false;
-      }
-    });
-  }
-
-  setInterval(autoSyncTick, 8000);
+  setInterval(autoSyncTick, 3000);
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') autoSyncTick();
   });
