@@ -355,7 +355,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
 </div>
 
 <!-- ════ SUPABASE SETUP ════ -->
-<div class="modal" id="modal-sheet-setup" style="display:none">
+<div class="modal-overlay" id="modal-sheet-setup">
   <div class="modal-box" style="max-width:480px">
     <div class="modal-title">⚙️ Setup Supabase</div>
 
@@ -794,46 +794,112 @@ function sbHeaders() {
   return { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
 }
 
-function syncToSheets() {
-  if (!SB_URL || !SB_KEY) return;
-  // Sync packing_lists
+function sortedCartons(pl) {
+  return (pl.cartons || []).slice().sort(function(a, b) {
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || (a.boxNo||0) - (b.boxNo||0);
+  });
+}
+
+function buildCartonRows(pl, c, displayBoxNo) {
+  // Flatten one carton into one row per item line
+  var items = c.items || [];
+  if (items.length === 0) items = [{}];
+  return items.map(function(it, idx) {
+    var sz = it.sizes || {};
+    return {
+      id: c.id + '_' + idx,
+      carton_id: c.id,
+      pl_id: pl.id,
+      pl_name: pl.name || '',
+      box_no: displayBoxNo || c.boxNo || null,
+      ref_no: c.refNo || null,
+      style: it.style || null,
+      color_code: it.colorCode || null,
+      color_name: it.colorName || null,
+      size_xs: sz['XS'] || 0,
+      size_s: sz['S'] || 0,
+      size_m: sz['M'] || 0,
+      size_l: sz['L'] || 0,
+      size_xl: sz['XL'] || 0,
+      size_2xl: sz['2XL'] || 0,
+      size_3xl: sz['3XL'] || 0,
+      size_4xl: sz['4XL'] || 0,
+      size_5xl: sz['5XL'] || 0,
+      size_6xl: sz['6XL'] || 0,
+      pcs: it.pcs || 0,
+      weight: c.weight || null,
+      measure: c.measure || null,
+      ts: c.ts ? new Date(c.ts).toISOString() : null,
+      created_by: c.createdBy || null,
+      verified_by: c.verifiedBy || null
+    };
+  });
+}
+
+function syncToSheets(onDone) {
+  if (!SB_URL || !SB_KEY) { if (onDone) onDone(false); return; }
+  if (!pls.length) { if (onDone) onDone(true); return; }
+
+  // 1. Sync packing_lists (stores full data blob for app loading)
   var plPayload = pls.map(function(pl) {
     return { id: pl.id, name: pl.name || '', status: pl.status || 'active',
       total_boxes: pl.total || 0, carton_count: (pl.cartons || []).length,
       data: pl, updated_at: new Date().toISOString() };
   });
-  if (plPayload.length) {
-    fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
-      .catch(function(){});
-  }
-  // Sync cartons
-  var cPayload = [];
+
+  // 2. Build flat carton rows using same sort order as web display
+  var cRows = [];
   pls.forEach(function(pl) {
-    (pl.cartons || []).forEach(function(c) {
-      cPayload.push({ id: c.id, pl_id: pl.id, pl_name: pl.name || '',
-        box_no: c.boxNo, items: c.items, total_pcs: c.totalPcs,
-        weight: c.weight, measure: c.measure, created_by: c.createdBy, ts: c.ts });
+    sortedCartons(pl).forEach(function(c, idx) {
+      buildCartonRows(pl, c, idx + 1).forEach(function(r) { cRows.push(r); });
     });
   });
-  if (cPayload.length) {
-    fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(cPayload) })
-      .catch(function(){});
-  }
+
+  var plIds = pls.map(function(pl) { return pl.id; }).join(',');
+  var authHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+
+  // Delete PLs and cartons that no longer exist in local data
+  fetch(SB_URL + '/rest/v1/packing_lists?id=not.in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
+    .catch(function(e) { console.error('PL cleanup error:', e); });
+  fetch(SB_URL + '/rest/v1/cartons?pl_id=not.in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
+    .catch(function(e) { console.error('Carton cleanup error:', e); });
+
+  // Upsert current packing_lists
+  fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
+    .then(function(r) { if (!r.ok) r.text().then(function(t) { console.error('PL sync:', r.status, t); }); })
+    .catch(function(e) { console.error('PL sync error:', e); });
+
+  // For cartons: DELETE existing rows for these PLs, then INSERT fresh
+  fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
+    .then(function(r) {
+      if (!r.ok) {
+        r.text().then(function(t) { console.error('Carton delete error:', r.status, t); toast('⚠️ Sync gagal delete (' + r.status + ')'); });
+        if (onDone) onDone(false); return; // always call onDone
+      }
+      if (!cRows.length) { if (onDone) onDone(true); return; }
+      fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: authHeaders, body: JSON.stringify(cRows) })
+        .then(function(r2) {
+          if (!r2.ok) r2.text().then(function(t) { console.error('Carton insert error:', r2.status, t); toast('⚠️ Sync gagal insert (' + r2.status + ')'); });
+          if (onDone) onDone(true);
+        })
+        .catch(function(e) { console.error('Carton insert error:', e); if (onDone) onDone(false); });
+    })
+    .catch(function(e) { console.error('Carton sync error:', e); toast('⚠️ Sync gagal: no connection'); if (onDone) onDone(false); });
 }
 
 function loadFromSheets(callback) {
+  // Load from packing_lists.data only (web is source of truth for carton structure)
   if (!SB_URL || !SB_KEY) { callback(false); return; }
-  fetch(SB_URL + '/rest/v1/packing_lists?select=data', { headers: sbHeaders() })
+  fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
     .then(function(r) { return r.json(); })
-    .then(function(rows) {
-      if (!Array.isArray(rows)) { callback(false); return; }
-      if (rows.length === 0 && pls.length > 0) { syncToSheets(); callback(true); return; }
-      if (rows.length > 0) {
-        pls = rows.map(function(r){ return r.data; }).filter(Boolean);
-        scannedMap = scannedMap || {};
-        localStorage.setItem('export_pls', JSON.stringify(pls));
-        callback(true);
-      } else { callback(false); }
+    .then(function(plRows) {
+      if (!Array.isArray(plRows) || plRows.length === 0) { callback(false); return; }
+      pls = plRows.map(function(row) { return row.data; }).filter(Boolean);
+      localStorage.setItem('export_pls', JSON.stringify(pls));
+      callback(true);
     })
     .catch(function() { callback(false); });
 }
@@ -1229,6 +1295,7 @@ function deleteCarton(plId, cId) {
   const pl = getPL(plId); if (!pl) return;
   if (!confirm('Delete this carton?')) return;
   pl.cartons = pl.cartons.filter(c => c.id !== cId);
+  deleteCartonFromSupabase(cId);
   save(); renderDash();
   openCartonList(plId);
   toast('🗑️ Carton deleted.');
@@ -2153,10 +2220,21 @@ function saveUsersLocal() {
   localStorage.setItem('export_users', JSON.stringify(users));
 }
 
+function deleteCartonFromSupabase(cId) {
+  if (!SB_URL || !SB_KEY) return;
+  var authHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+  fetch(SB_URL + '/rest/v1/cartons?carton_id=eq.' + cId, { method: 'DELETE', headers: authHeaders }).catch(function(){});
+}
+
 function syncUsers() {
   if (!SB_URL || !SB_KEY) return;
   var payload = users.map(function(u) {
-    return { id: u.id, name: u.name, role: u.role || 'user', password: u.password || '' };
+    return {
+      id: u.id,
+      name: u.name,
+      role: u.role || 'user',
+      password: u.plainPassword || ''  // store plaintext for readability in Supabase
+    };
   });
   if (payload.length) {
     fetch(SB_URL + '/rest/v1/app_users', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(payload) }).catch(function(){});
@@ -2169,7 +2247,17 @@ function loadUsersFromSupabase(cb) {
     .then(function(r){ return r.json(); })
     .then(function(rows) {
       if (Array.isArray(rows) && rows.length > 0) {
-        users = rows.map(function(r){ return { id: r.id, name: r.name, role: r.role || 'user', password: r.password || '' }; });
+        users = rows.map(function(r) {
+          return {
+            id: r.id,
+            name: r.name,
+            username: (r.name || '').toLowerCase().replace(/\s+/g,'_'),
+            passwordHash: hashPwd(r.password || ''), // hash the stored plaintext for comparison
+            plainPassword: r.password || '',
+            role: r.role || 'user',
+            status: r.status || 'approved'
+          };
+        });
         saveUsersLocal();
         if (cb) cb(true);
       } else { if (cb) cb(false); }
@@ -2191,14 +2279,33 @@ function doLogin() {
   var password = document.getElementById('login-password').value || '';
   var errEl = document.getElementById('login-error');
   if (!username || !password) { errEl.textContent = '⚠️ Enter username and password.'; errEl.style.display=''; return; }
-  var user = users.find(function(u){ return u.username === username && u.passwordHash === hashPwd(password); });
-  if (!user) { errEl.textContent = users.length === 0 ? '⚠️ No users registered yet. Please register first.' : '❌ Wrong username or password.'; errEl.style.display=''; return; }
-  if (user.status === 'pending') { errEl.textContent = '⏳ Account pending approval. Please wait for admin to approve.'; errEl.style.display=''; return; }
-  if (user.status === 'rejected') { errEl.textContent = '❌ Account rejected. Contact admin.'; errEl.style.display=''; return; }
-  currentUser = { id: user.id, name: user.name, username: user.username, role: user.role };
-  sessionStorage.setItem('current_user', JSON.stringify(currentUser));
-  errEl.style.display = 'none';
-  showMainApp();
+  function _tryLogin() {
+    var user = users.find(function(u){
+      var nameMatch = u.username === username || (u.name||'').toLowerCase().replace(/\s+/g,'_') === username || (u.name||'').toLowerCase() === username;
+      var pwMatch = u.passwordHash === hashPwd(password) || u.plainPassword === password;
+      return nameMatch && pwMatch;
+    });
+    if (!user) { errEl.textContent = users.length === 0 ? '⚠️ No users registered yet. Please register first.' : '❌ Wrong username or password.'; errEl.style.display=''; return; }
+    if (user.status === 'pending') { errEl.textContent = '⏳ Account pending approval. Please wait for admin to approve.'; errEl.style.display=''; return; }
+    if (user.status === 'rejected') { errEl.textContent = '❌ Account rejected. Contact admin.'; errEl.style.display=''; return; }
+    currentUser = { id: user.id, name: user.name, username: user.username, role: user.role };
+    sessionStorage.setItem('current_user', JSON.stringify(currentUser));
+    errEl.style.display = 'none';
+    showMainApp();
+  }
+  // Try with cached users first; if fail and Supabase connected, reload fresh then retry
+  var quickUser = users.find(function(u){
+    var nameMatch = u.username === username || (u.name||'').toLowerCase().replace(/\s+/g,'_') === username || (u.name||'').toLowerCase() === username;
+    var pwMatch = u.passwordHash === hashPwd(password) || u.plainPassword === password;
+    return nameMatch && pwMatch;
+  });
+  if (quickUser) { _tryLogin(); return; }
+  if (SB_URL && SB_KEY) {
+    errEl.textContent = '⏳ Checking...'; errEl.style.display = '';
+    loadUsersFromSupabase(function() { _tryLogin(); });
+  } else {
+    _tryLogin();
+  }
 }
 
 function doRegister() {
@@ -2219,7 +2326,7 @@ function doRegister() {
       name: name,
       username: username,
       passwordHash: hashPwd(password),
-      plainPassword: isFirst ? null : password,
+      plainPassword: password,
       role: isFirst ? 'admin' : 'user',
       status: isFirst ? 'approved' : 'pending',
       createdAt: new Date().toISOString()
@@ -2465,42 +2572,68 @@ function checkSession() {
   } catch(e) { return false; }
 }
 
-function showSheetSetupFromAuth() {
-  document.getElementById('auth-overlay').style.display = 'none';
-  document.getElementById('sheet-setup-modal').style.display = 'flex';
-}
-
 window.onload = function() {
   load(); loadUsers(); updateSheetStatus();
   function _showAuthOrMain() {
     if (checkSession()) { showMainApp(); }
     else { showAuthScreen(); switchAuthTab('login'); }
   }
+  clearItemRows('modal'); renderAll();
   if (SB_URL && SB_KEY) {
+    // Load users from Supabase first, then show auth (so login works even if localStorage cleared)
     loadUsersFromSupabase(function() {
-      loadFromSheets(function(ok) {
-        clearItemRows('modal'); renderAll();
-        if (ok) toast('Data loaded from Supabase.');
-        autoSyncLastHash = JSON.stringify(pls);
-      });
       _showAuthOrMain();
+      if (pls.length === 0) {
+        // No local data — load from Supabase
+        loadFromSheets(function(ok) {
+          if (ok) { renderAll(); toast('Data loaded from Supabase.'); }
+        });
+      } else {
+        // Have local data — push to Supabase (don't pull, local is source of truth)
+        syncToSheets(function() {});
+      }
     });
   } else {
-    clearItemRows('modal'); renderAll(); _showAuthOrMain();
+    _showAuthOrMain();
   }
+  var _lastSaveTime = 0;
+  var _isSyncing = false;
+  // wrap save() so we track last save time
+  var _origSave = save;
+  save = function() { _lastSaveTime = Date.now(); _origSave(); };
+
+  function renderCartonListIfOpen() {
+    var open = document.querySelector('.pl-carton-list[style*="display: block"], .pl-carton-list:not([style*="none"])');
+    if (open && open.dataset.plId) openCartonList(open.dataset.plId);
+  }
+
+  var _isSyncingAt = 0;
   function autoSyncTick() {
-    syncToSheets();
-    if (SB_URL && SB_KEY) {
-      loadFromSheets(function(ok) {
-        if (ok) {
-          // Only re-render background pages, NOT pl-list (to avoid resetting carton view)
-          renderDash();
-          renderExportSelect();
-        }
-      });
-    }
+    // Reset stuck flag after 15s
+    if (_isSyncing && Date.now() - _isSyncingAt > 15000) _isSyncing = false;
+    if (_isSyncing) return;
+    if (!SB_URL || !SB_KEY) return;
+    _isSyncing = true;
+    _isSyncingAt = Date.now();
+    // 1. Push local data to Supabase first
+    syncToSheets(function() {
+      // 2. Only pull if no local save happened in last 5s (avoid overwriting fresh edits)
+      if (Date.now() - _lastSaveTime > 5000) {
+        loadFromSheets(function(ok) {
+          _isSyncing = false;
+          if (ok) { renderDash(); renderExportSelect(); renderCartonListIfOpen(); }
+        });
+      } else {
+        _isSyncing = false;
+      }
+    });
   }
-  setInterval(autoSyncTick, 30000);
+
+  setInterval(autoSyncTick, 8000);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') autoSyncTick();
+  });
+  window.addEventListener('focus', autoSyncTick);
 };
 </script>
 </body>
