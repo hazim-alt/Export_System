@@ -601,6 +601,7 @@ let pls = []; // array of packing list objects
 let selectedPLId = null;
 let printMode = null; // 'label' | 'pl'
 let scannedMap = {}; // { ctnId: timestamp } persisted in localStorage
+let _cartonViewPlId = null; // track if carton list is open
 let users = [];
 let currentUser = null;
 
@@ -1185,6 +1186,7 @@ function deletePL(id) {
 function renderPLList() {
   const el = document.getElementById('pl-list');
   if (!el) return;
+  if (_cartonViewPlId) { openCartonList(_cartonViewPlId); return; }
   if (pls.length === 0) {
     el.innerHTML = `<div class="card" style="text-align:center;color:#aaa;padding:40px"><div style="font-size:2rem;margin-bottom:8px">📋</div>No Packing Lists yet. Click "+ New PL" to start.</div>`;
     return;
@@ -1225,6 +1227,7 @@ function renderPLList() {
 // ══ CARTON LIST (in PL) ══
 function openCartonList(plId) {
   const pl = getPL(plId); if (!pl) return;
+  _cartonViewPlId = plId;
   const el = document.getElementById('pl-list');
 
   var rows = '';
@@ -1277,7 +1280,7 @@ function openCartonList(plId) {
   }
 
   el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">'
-    + '<button class="btn btn-grey" onclick="renderPLList()">← Back</button>'
+    + '<button class="btn btn-grey" onclick="_cartonViewPlId=null;renderPLList()">← Back</button>'
     + '<div><div style="font-weight:800;color:var(--blue);font-size:1rem">' + pl.name + '</div>'
     + '<div style="font-size:.75rem;color:#888">' + pl.cartons.length + ' cartons | ' + (pl.dest||'') + '</div></div>'
     + '<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">'
