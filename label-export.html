@@ -2363,7 +2363,7 @@ function doLogin() {
     if (user.status === 'pending') { errEl.textContent = '⏳ Account pending approval. Please wait for admin to approve.'; errEl.style.display=''; return; }
     if (user.status === 'rejected') { errEl.textContent = '❌ Account rejected. Contact admin.'; errEl.style.display=''; return; }
     currentUser = { id: user.id, name: user.name, username: user.username, role: user.role };
-    sessionStorage.setItem('current_user', JSON.stringify(currentUser));
+    localStorage.setItem('current_user', JSON.stringify(currentUser));
     errEl.style.display = 'none';
     showMainApp();
   }
@@ -2445,7 +2445,7 @@ function editMyName() {
   var u = users.find(function(x){ return x.id === currentUser.id; });
   if (u) { u.name = newName; saveUsersLocal(); syncUsers(); }
   currentUser.name = newName;
-  sessionStorage.setItem('current_user', JSON.stringify(currentUser));
+  localStorage.setItem('current_user', JSON.stringify(currentUser));
   var el = document.getElementById('topbar-user');
   if (el) el.textContent = '✏️ ' + newName;
   setTimeout(function(){ if (el) el.textContent = newName; }, 1500);
@@ -2589,7 +2589,7 @@ function claimOwner() {
   if (!u) return;
   u.role = 'owner';
   currentUser.role = 'owner';
-  sessionStorage.setItem('current_user', JSON.stringify(currentUser));
+  localStorage.setItem('current_user', JSON.stringify(currentUser));
   saveUsersLocal(); syncUsers();
   showMainApp();
   go('users');
@@ -2611,7 +2611,7 @@ function changeUserRole(id, newRole) {
 function logoutUser() {
   if (!confirm('Sign out?')) return;
   currentUser = null;
-  sessionStorage.removeItem('current_user');
+  localStorage.removeItem('current_user');
   showAuthScreen();
 }
 
@@ -2627,7 +2627,7 @@ function showAuthScreen() {
 }
 
 function checkSession() {
-  var stored = sessionStorage.getItem('current_user');
+  var stored = localStorage.getItem('current_user');
   if (!stored) return false;
   try {
     var u = JSON.parse(stored);
@@ -2648,13 +2648,8 @@ window.onload = function() {
   if (SB_URL && SB_KEY) {
     loadUsersFromSupabase(function() {
       _showAuthOrMain();
-      if (pls.length === 0) {
-        loadFromSheets(function(ok) {
-          if (ok) { renderAll(); toast('Data loaded from Supabase.'); }
-        });
-      } else {
-        syncToSheets(function() {});
-      }
+      // Always sync on startup: push local then pull all from Supabase
+      autoSyncTick();
     });
   } else {
     _showAuthOrMain();
