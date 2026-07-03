@@ -363,10 +363,16 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
       <b>Setup steps (one time only):</b><br>
       1. Go to <a href="https://supabase.com" target="_blank" style="color:#58a6ff">supabase.com</a> → Sign up → New project<br>
       2. Go to <b>SQL Editor</b> → run kod ni:<br>
-      <code style="background:#0d1117;color:#79c0ff;padding:6px 10px;border-radius:6px;font-size:.75rem;display:block;margin:6px 0;white-space:pre-wrap;border:1px solid #30363d;font-family:monospace">create table packing_lists (id text primary key, name text, status text default 'active', total_boxes int default 0, carton_count int default 0, data jsonb, updated_at timestamptz default now());
+      <code style="background:#0d1117;color:#79c0ff;padding:6px 10px;border-radius:6px;font-size:.75rem;display:block;margin:6px 0;white-space:pre-wrap;border:1px solid #30363d;font-family:monospace">create table if not exists packing_lists (id text primary key, name text, status text default 'active', total_boxes int default 0, carton_count int default 0, data jsonb, updated_at timestamptz default now());
 alter table packing_lists disable row level security;
-create table app_users (id text primary key, name text, role text default 'user', password text, created_at timestamptz default now());
-alter table app_users disable row level security;</code>
+create table if not exists app_users (id text primary key, name text, username text, role text default 'user', status text default 'approved', password text, created_at timestamptz default now());
+alter table app_users disable row level security;
+create table if not exists cartons (id text primary key, carton_id text, pl_id text, pl_name text, box_no int, ref_no text, style text, color_code text, color_name text, size_xs int default 0, size_s int default 0, size_m int default 0, size_l int default 0, size_xl int default 0, size_2xl int default 0, size_3xl int default 0, size_4xl int default 0, size_5xl int default 0, size_6xl int default 0, pcs int default 0, weight text, measure text, ts timestamptz, created_by text, verified_by text);
+alter table cartons disable row level security;
+create table if not exists deleted_pls (id text primary key);
+alter table deleted_pls disable row level security;
+create table if not exists deleted_cartons (id text primary key);
+alter table deleted_cartons disable row level security;</code>
       3. Go to <b>Settings → API</b> → copy <b>Project URL</b> dan <b>anon public</b> key
     </div>
 
@@ -955,38 +961,29 @@ function syncToSheets(onDone) {
     fetch(SB_URL + '/rest/v1/deleted_cartons', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(deletedCartonIds.map(function(id){ return { id: id }; })) }).catch(function(){});
   }
 
-  // Upsert current PLs to Supabase (other users' PLs are untouched)
-  console.log('[Sync] PL upsert payload cartons:', plPayload.map(function(p){ return p.name + ':' + (p.data && p.data.cartons ? p.data.cartons.length : 0) + 'ctns'; }));
+  // Upsert current PLs first, THEN sync carton rows (chained — prevents mergeFromSheets race)
   fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
     .then(function(r) {
-      if (!r.ok) r.text().then(function(t) { console.error('PL upsert error:', r.status, t); toast('⚠️ PL sync error ' + r.status); });
-      else console.log('[Sync] PL upsert ok ✅');
-    })
-    .catch(function(e) { console.error('PL sync error:', e); });
-
-  // Refresh carton rows for MY PLs only: delete old rows, insert fresh
-  console.log('[Sync] Sending ' + cRows.length + ' carton rows for PLs: ' + plIds);
-  fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
-    .then(function(r) {
-      if (!r.ok) {
-        r.text().then(function(t) { console.error('Carton DELETE error:', r.status, t); toast('⚠️ Carton delete error ' + r.status); });
-        if (onDone) onDone(false); return;
-      }
-      console.log('[Sync] Carton DELETE ok, inserting ' + cRows.length + ' rows...');
-      if (!cRows.length) { if (onDone) onDone(true); return; }
-      var insertHeaders = Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal,resolution=merge-duplicates' });
-      fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: insertHeaders, body: JSON.stringify(cRows) })
+      if (!r.ok) { r.text().then(function(t) { console.error('PL upsert error:', r.status, t); toast('⚠️ PL sync error ' + r.status); }); if (onDone) onDone(false); return; }
+      // PL upsert done — now refresh carton rows (delete old, insert fresh)
+      fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
         .then(function(r2) {
           if (!r2.ok) {
-            r2.text().then(function(t) { console.error('Carton INSERT error:', r2.status, t); toast('⚠️ Carton insert error ' + r2.status + ': ' + t.slice(0,80)); });
-          } else {
-            console.log('[Sync] Carton INSERT ok ✅');
+            r2.text().then(function(t) { console.error('Carton DELETE error:', r2.status, t); });
+            if (onDone) onDone(true); return; // PL already saved — still call onDone(true)
           }
-          if (onDone) onDone(true);
+          if (!cRows.length) { if (onDone) onDone(true); return; }
+          var insertHeaders = Object.assign({}, sbHeaders(), { 'Prefer': 'return=minimal,resolution=merge-duplicates' });
+          fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: insertHeaders, body: JSON.stringify(cRows) })
+            .then(function(r3) {
+              if (!r3.ok) r3.text().then(function(t) { console.error('Carton INSERT error:', r3.status, t); toast('⚠️ Carton insert error ' + r3.status + ': ' + t.slice(0,80)); });
+              if (onDone) onDone(true);
+            })
+            .catch(function(e) { console.error('Carton insert error:', e); if (onDone) onDone(true); });
         })
-        .catch(function(e) { console.error('Carton insert error:', e); if (onDone) onDone(false); });
+        .catch(function(e) { console.error('Carton sync error:', e); toast('⚠️ Sync gagal: no connection'); if (onDone) onDone(false); });
     })
-    .catch(function(e) { console.error('Carton sync error:', e); toast('⚠️ Sync gagal: no connection'); if (onDone) onDone(false); });
+    .catch(function(e) { console.error('PL sync error:', e); toast('⚠️ Sync gagal: no connection'); if (onDone) onDone(false); });
   } // end _doSync
 }
 
@@ -2202,7 +2199,8 @@ function syncUsers() {
     };
   });
   if (payload.length) {
-    fetch(SB_URL + '/rest/v1/app_users', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(payload) }).catch(function(){});
+    var uHeaders = Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
+    fetch(SB_URL + '/rest/v1/app_users', { method: 'POST', headers: uHeaders, body: JSON.stringify(payload) }).catch(function(){});
   }
 }
 
