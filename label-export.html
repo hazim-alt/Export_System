@@ -789,6 +789,10 @@ function saveScanned() {
 // ══ SUPABASE SYNC ══
 var SB_URL = localStorage.getItem('sb_url') || '';
 var SB_KEY = localStorage.getItem('sb_key') || '';
+var deletedPLIds = JSON.parse(localStorage.getItem('deleted_pl_ids') || '[]');
+function saveDeletedPLIds() { localStorage.setItem('deleted_pl_ids', JSON.stringify(deletedPLIds)); }
+var deletedCartonIds = JSON.parse(localStorage.getItem('deleted_carton_ids') || '[]');
+function saveDeletedCartonIds() { localStorage.setItem('deleted_carton_ids', JSON.stringify(deletedCartonIds)); }
 
 function sbHeaders() {
   return { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' };
@@ -841,6 +845,47 @@ function buildCartonRows(pl, c, displayBoxNo) {
 
 function syncToSheets(onDone) {
   if (!SB_URL || !SB_KEY) { if (onDone) onDone(false); return; }
+
+  // First: load deletion ledgers from Supabase so all devices stay in sync on deletions
+  fetch(SB_URL + '/rest/v1/deleted_pls?select=id', { headers: sbHeaders() })
+    .then(function(r) { return r.ok ? r.json() : []; })
+    .then(function(rows) {
+      if (Array.isArray(rows)) {
+        rows.forEach(function(row) {
+          if (row.id && deletedPLIds.indexOf(row.id) === -1) { deletedPLIds.push(row.id); }
+        });
+        saveDeletedPLIds();
+        var before = pls.length;
+        pls = pls.filter(function(p) { return deletedPLIds.indexOf(p.id) === -1; });
+        if (pls.length !== before) { save(); }
+      }
+      // Chain: also fetch deleted_cartons ledger
+      return fetch(SB_URL + '/rest/v1/deleted_cartons?select=id', { headers: sbHeaders() })
+        .then(function(r2) { return r2.ok ? r2.json() : []; })
+        .catch(function() { return []; });
+    })
+    .then(function(cRows) {
+      if (Array.isArray(cRows)) {
+        cRows.forEach(function(row) {
+          if (row.id && deletedCartonIds.indexOf(row.id) === -1) { deletedCartonIds.push(row.id); }
+        });
+        saveDeletedCartonIds();
+        // Remove deleted cartons from local PL data
+        if (deletedCartonIds.length) {
+          var changed2 = false;
+          pls.forEach(function(pl) {
+            var before2 = (pl.cartons || []).length;
+            pl.cartons = (pl.cartons || []).filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
+            if ((pl.cartons || []).length !== before2) changed2 = true;
+          });
+          if (changed2) { save(); }
+        }
+      }
+      _doSync(onDone);
+    })
+    .catch(function() { _doSync(onDone); });
+
+  function _doSync(onDone) {
   if (!pls.length) { if (onDone) onDone(true); return; }
 
   // 1. Sync packing_lists (stores full data blob for app loading)
@@ -861,36 +906,39 @@ function syncToSheets(onDone) {
   var plIds = pls.map(function(pl) { return pl.id; }).join(',');
   var authHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
 
-  // Step 1: Delete stale PLs — WAIT for this before loadFromSheets can run
-  fetch(SB_URL + '/rest/v1/packing_lists?id=not.in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
-    .catch(function(e) { console.error('PL cleanup error:', e); })
-    .then(function() {
-      // Step 2: Delete stale cartons (fire-and-forget, timing not critical)
-      fetch(SB_URL + '/rest/v1/cartons?pl_id=not.in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
-        .catch(function(e) { console.error('Carton cleanup error:', e); });
+  // Always force-delete explicitly deleted PLs (regardless of what other devices push back)
+  if (deletedPLIds.length) {
+    var ah2 = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+    fetch(SB_URL + '/rest/v1/packing_lists?id=in.(' + deletedPLIds.join(',') + ')', { method: 'DELETE', headers: ah2 }).catch(function(){});
+    fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + deletedPLIds.join(',') + ')', { method: 'DELETE', headers: ah2 }).catch(function(){});
+  }
+  // Push deleted_cartons ledger so other devices learn which cartons are deleted
+  if (deletedCartonIds.length) {
+    fetch(SB_URL + '/rest/v1/deleted_cartons', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(deletedCartonIds.map(function(id){ return { id: id }; })) }).catch(function(){});
+  }
 
-      // Step 3: Upsert current packing_lists (fire-and-forget)
-      fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
-        .then(function(r) { if (!r.ok) r.text().then(function(t) { console.error('PL sync:', r.status, t); }); })
-        .catch(function(e) { console.error('PL sync error:', e); });
+  // Upsert current PLs to Supabase (other users' PLs are untouched)
+  fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
+    .then(function(r) { if (!r.ok) r.text().then(function(t) { console.error('PL sync:', r.status, t); }); })
+    .catch(function(e) { console.error('PL sync error:', e); });
 
-      // Step 4: Delete carton rows for current PLs, then INSERT fresh → call onDone
-      fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
-        .then(function(r) {
-          if (!r.ok) {
-            r.text().then(function(t) { console.error('Carton delete error:', r.status, t); toast('⚠️ Sync gagal delete (' + r.status + ')'); });
-            if (onDone) onDone(false); return;
-          }
-          if (!cRows.length) { if (onDone) onDone(true); return; }
-          fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: authHeaders, body: JSON.stringify(cRows) })
-            .then(function(r2) {
-              if (!r2.ok) r2.text().then(function(t) { console.error('Carton insert error:', r2.status, t); toast('⚠️ Sync gagal insert (' + r2.status + ')'); });
-              if (onDone) onDone(true);
-            })
-            .catch(function(e) { console.error('Carton insert error:', e); if (onDone) onDone(false); });
+  // Refresh carton rows for MY PLs only: delete old rows, insert fresh
+  fetch(SB_URL + '/rest/v1/cartons?pl_id=in.(' + plIds + ')', { method: 'DELETE', headers: authHeaders })
+    .then(function(r) {
+      if (!r.ok) {
+        r.text().then(function(t) { console.error('Carton delete error:', r.status, t); toast('⚠️ Sync gagal delete (' + r.status + ')'); });
+        if (onDone) onDone(false); return;
+      }
+      if (!cRows.length) { if (onDone) onDone(true); return; }
+      fetch(SB_URL + '/rest/v1/cartons', { method: 'POST', headers: authHeaders, body: JSON.stringify(cRows) })
+        .then(function(r2) {
+          if (!r2.ok) r2.text().then(function(t) { console.error('Carton insert error:', r2.status, t); toast('⚠️ Sync gagal insert (' + r2.status + ')'); });
+          if (onDone) onDone(true);
         })
-        .catch(function(e) { console.error('Carton sync error:', e); toast('⚠️ Sync gagal: no connection'); if (onDone) onDone(false); });
-    });
+        .catch(function(e) { console.error('Carton insert error:', e); if (onDone) onDone(false); });
+    })
+    .catch(function(e) { console.error('Carton sync error:', e); toast('⚠️ Sync gagal: no connection'); if (onDone) onDone(false); });
+  } // end _doSync
 }
 
 function loadFromSheets(callback) {
@@ -900,7 +948,14 @@ function loadFromSheets(callback) {
     .then(function(r) { return r.json(); })
     .then(function(plRows) {
       if (!Array.isArray(plRows) || plRows.length === 0) { callback(false); return; }
-      pls = plRows.map(function(row) { return row.data; }).filter(Boolean);
+      pls = plRows.map(function(row) { return row.data; }).filter(function(pl) {
+        return pl && deletedPLIds.indexOf(pl.id) === -1;
+      });
+      if (deletedCartonIds.length) {
+        pls.forEach(function(pl) {
+          pl.cartons = (pl.cartons || []).filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
+        });
+      }
       localStorage.setItem('export_pls', JSON.stringify(pls));
       callback(true);
     })
@@ -1075,13 +1130,16 @@ function deletePL(id) {
   if (!confirm(`Delete PL "${pl?.name}"? All cartons in this PL will be removed.`)) return;
   pls = pls.filter(p => p.id !== id);
   if (selectedPLId === id) { selectedPLId = null; }
+  if (deletedPLIds.indexOf(id) === -1) { deletedPLIds.push(id); saveDeletedPLIds(); }
   save(); renderAll();
   toast('🗑️ PL deleted.');
-  // Immediately delete from Supabase without waiting for autoSyncTick
+  // Immediately delete from Supabase + record in deleted_pls table so ALL devices know
   if (SB_URL && SB_KEY) {
     var ah = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
     fetch(SB_URL + '/rest/v1/packing_lists?id=eq.' + id, { method: 'DELETE', headers: ah }).catch(function(){});
     fetch(SB_URL + '/rest/v1/cartons?pl_id=eq.' + id, { method: 'DELETE', headers: ah }).catch(function(){});
+    // Write to deleted_pls so other devices pick it up on their next sync
+    fetch(SB_URL + '/rest/v1/deleted_pls', { method: 'POST', headers: sbHeaders(), body: JSON.stringify([{ id: id }]) }).catch(function(){});
   }
 }
 
@@ -1307,6 +1365,7 @@ function deleteCarton(plId, cId) {
   const pl = getPL(plId); if (!pl) return;
   if (!confirm('Delete this carton?')) return;
   pl.cartons = pl.cartons.filter(c => c.id !== cId);
+  if (deletedCartonIds.indexOf(cId) === -1) { deletedCartonIds.push(cId); saveDeletedCartonIds(); }
   deleteCartonFromSupabase(cId);
   save(); renderDash();
   openCartonList(plId);
@@ -2236,6 +2295,7 @@ function deleteCartonFromSupabase(cId) {
   if (!SB_URL || !SB_KEY) return;
   var authHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
   fetch(SB_URL + '/rest/v1/cartons?carton_id=eq.' + cId, { method: 'DELETE', headers: authHeaders }).catch(function(){});
+  fetch(SB_URL + '/rest/v1/deleted_cartons', { method: 'POST', headers: sbHeaders(), body: JSON.stringify([{ id: cId }]) }).catch(function(){});
 }
 
 function syncUsers() {
@@ -2539,8 +2599,6 @@ function claimOwner() {
 function changeUserRole(id, newRole) {
   var u = users.find(function(x){ return x.id === id; });
   if (!u || !newRole || newRole === u.role) return;
-  // Hierarchy: owner > admin > user
-  // Admin cannot change owner or other admin roles
   if (currentUser && currentUser.role === 'admin') {
     if (u.role === 'owner' || newRole === 'owner') { toast('⛔ Only Owner can assign Owner role.'); renderUsersPage(); return; }
   }
@@ -2588,35 +2646,106 @@ window.onload = function() {
   }
   clearItemRows('modal'); renderAll();
   if (SB_URL && SB_KEY) {
-    // Load users from Supabase first, then show auth (so login works even if localStorage cleared)
     loadUsersFromSupabase(function() {
       _showAuthOrMain();
       if (pls.length === 0) {
-        // No local data — load from Supabase
         loadFromSheets(function(ok) {
           if (ok) { renderAll(); toast('Data loaded from Supabase.'); }
         });
       } else {
-        // Have local data — push to Supabase (don't pull, local is source of truth)
         syncToSheets(function() {});
       }
     });
   } else {
     _showAuthOrMain();
   }
+
   var _lastSaveTime = 0;
   var _isSyncing = false;
-  // wrap save() so we track last save time
+  var _isSyncingAt = 0;
   var _origSave = save;
   save = function() { _lastSaveTime = Date.now(); _origSave(); };
 
   function renderCartonListIfOpen() {
-    var open = document.querySelector('.pl-carton-list[style*="display: block"], .pl-carton-list:not([style*="none"])');
-    if (open && open.dataset.plId) openCartonList(open.dataset.plId);
+    if (selectedPLId && document.getElementById('modal-carton') && document.getElementById('modal-carton').classList.contains('open')) {
+      renderCartonList(selectedPLId);
+    }
   }
 
-  var _isSyncingAt = 0;
   function mergeFromSheets(callback) {
+    // Pull from Supabase but ONLY update PLs that already exist locally.
+    // Never re-add a PL that was deleted locally. Also filter out deleted cartons.
+    if (!SB_URL || !SB_KEY) { callback(false); return; }
+    fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
+      .then(function(r) { return r.json(); })
+      .then(function(plRows) {
+        if (!Array.isArray(plRows)) { callback(false); return; }
+        var localIds = pls.map(function(p) { return p.id; });
+        var changed = false;
+        plRows.forEach(function(row) {
+          if (!row.data) return;
+          if (deletedPLIds.indexOf(row.data.id) !== -1) return; // skip deleted PLs
+          var idx = localIds.indexOf(row.data.id);
+          if (idx !== -1) {
+            // Update existing PL with latest from Supabase
+            var merged = row.data;
+            if (deletedCartonIds.length && merged.cartons) {
+              merged.cartons = merged.cartons.filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
+            }
+            pls[idx] = merged;
+            changed = true;
+          } else {
+            // New PL from another user — add it to local
+            var newPl = row.data;
+            if (deletedCartonIds.length && newPl.cartons) {
+              newPl.cartons = newPl.cartons.filter(function(c) { return deletedCartonIds.indexOf(c.id) === -1; });
+            }
+            pls.push(newPl);
+            localIds.push(newPl.id);
+            changed = true;
+          }
+        });
+        if (changed) { localStorage.setItem('export_pls', JSON.stringify(pls)); callback(true); }
+        else callback(false);
+      })
+      .catch(function() { callback(false); });
+  }
+
+  function autoSyncTick() {
+    if (_isSyncing && Date.now() - _isSyncingAt > 15000) _isSyncing = false;
+    if (_isSyncing) return;
+    if (!SB_URL || !SB_KEY) return;
+    _isSyncing = true;
+    _isSyncingAt = Date.now();
+    syncToSheets(function() {
+      if (Date.now() - _lastSaveTime > 5000) {
+        mergeFromSheets(function(ok) {
+          _isSyncing = false;
+          if (ok) { renderDash(); renderExportSelect(); renderCartonListIfOpen(); }
+        });
+      } else {
+        _isSyncing = false;
+      }
+    });
+  }
+
+  setInterval(autoSyncTick, 8000);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') autoSyncTick();
+  });
+  window.addEventListener('focus', autoSyncTick);
+};
+</script>
+</body>
+</html>
+ble') autoSyncTick();
+  });
+  window.addEventListener('focus', autoSyncTick);
+};
+</script>
+</body>
+</html>
+FromSheets(callback) {
     // Pull from Supabase but ONLY update PLs that already exist locally.
     // Never re-add a PL that was deleted locally — web is source of truth for deletions.
     if (!SB_URL || !SB_KEY) { callback(false); return; }
@@ -2628,9 +2757,9 @@ window.onload = function() {
         var changed = false;
         plRows.forEach(function(row) {
           if (!row.data) return;
+          if (deletedPLIds.indexOf(row.data.id) !== -1) return; // skip explicitly deleted
           var idx = localIds.indexOf(row.data.id);
-          if (idx !== -1) { pls[idx] = row.data; changed = true; } // update existing
-          // If id not in local → it was deleted locally, skip it
+          if (idx !== -1) { pls[idx] = row.data; changed = true; } // update existing only
         });
         if (changed) { localStorage.setItem('export_pls', JSON.stringify(pls)); callback(true); }
         else callback(false);
