@@ -145,7 +145,7 @@ function processVerifyResult(text) {
 
 function saveScanned() {
   localStorage.setItem('export_scanned', JSON.stringify(scannedMap));
-  syncToSupabase();
+  // scan state is local only — do NOT push PL data to Supabase here
 }
 
 function renderVerifyList() {
@@ -210,7 +210,6 @@ function finishLoading(plId) {
   selectedPLId = null;
   localStorage.removeItem('selected_pl_id');
   save();
-  syncToSupabase();
   stopVerifyScan();
   showToast('✅ PL marked as completed!');
   showHome();
@@ -337,9 +336,9 @@ html.light{
 .status-dot.red{background:var(--red)}
 
 /* ── CARTON LIST ── */
-.ctn-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
+.ctn-row{display:block;padding:12px 0;border-bottom:1px solid var(--border)}
 .ctn-row:last-child{border-bottom:none}
-.ctn-boxno{width:44px;height:44px;background:var(--blue);color:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0}
+.ctn-boxno{min-width:44px;padding:6px 8px;background:var(--blue);color:#fff;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0;line-height:1.2}
 .ctn-info{flex:1;min-width:0}
 .ctn-style{font-size:.88rem;font-weight:700;color:#1a2332;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctn-sub{font-size:.73rem;color:var(--text-muted);margin-top:2px}
@@ -1177,23 +1176,51 @@ function renderCartonList() {
     el.innerHTML = '<p style="color:#94a3b8;text-align:center;padding:20px">No cartons yet.</p>';
     return;
   }
-  var sorted = pl.cartons.slice().sort(function(a,b){ return a.boxNo - b.boxNo; });
-  el.innerHTML = sorted.map(function(c) {
+  var localDate = function(ts) {
+    if (!ts) return '';
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  };
+  var getItems = function(c) {
+    return c.items && c.items.length ? c.items : [{ style: c.style||'', colorCode: c.colorCode||'', colorName: c.colorName||'', sizes: c.sizes||{}, pcs: c.totalPcs||0 }];
+  };
+  var sorted = pl.cartons.slice().sort(function(a,b){
+    var ad = localDate(a.ts), bd = localDate(b.ts);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getItems(a), bi = getItems(b);
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
+  el.innerHTML = sorted.map(function(c, cIdx) {
     var items = c.items && c.items.length ? c.items : [{ style: c.style || '', colorCode: c.colorCode || '', colorName: c.colorName || '', sizes: c.sizes || {}, pcs: c.totalPcs || 0 }];
-    var styleStr = items.map(function(it){ return it.style || ''; }).filter(Boolean).join(' / ') || '—';
-    var colorStr = items.map(function(it){ return (it.colorCode ? it.colorCode + ' ' : '') + (it.colorName || ''); }).filter(Boolean).join(' / ') || '—';
+    var uniq = function(arr) { return arr.filter(function(v,i,a){ return v && a.indexOf(v)===i; }); };
+    var styleStr = uniq(items.map(function(it){ return it.style || ''; })).join(' / ') || '—';
+    var colorStr = uniq(items.map(function(it){ return ((it.colorCode||'')+' '+(it.colorName||'')).trim(); })).join(' / ') || '—';
+    var _allSizes = [], _allPcs = [];
+    items.forEach(function(it) {
+      var sz = it.sizes || {};
+      SIZES.forEach(function(s) { if (sz[s] > 0) { _allSizes.push(s); _allPcs.push(sz[s]); } });
+    });
+    var sizeStr = _allSizes.length ? _allSizes.map(function(s,i){ return s+':'+_allPcs[i]; }).join(' / ') : '—';
+    var ts = c.ts ? new Date(c.ts).toLocaleString('en-GB', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : '';
     return '<div class="ctn-row">'
-      + '<div class="ctn-boxno">' + String(c.boxNo).padStart(3,'0') + '</div>'
-      + '<div class="ctn-info">'
-      + '<div class="ctn-style">' + styleStr + '</div>'
-      + '<div class="ctn-sub">' + colorStr + (c.weight ? ' | ' + c.weight + 'kg' : '') + '</div>'
+      + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px">'
+      + '<div class="ctn-boxno"><span>' + String(cIdx+1).padStart(3,'0') + '</span>'
+      + (c.refNo ? '<span style="font-size:.55rem;font-weight:600;opacity:.85;margin-top:2px">' + c.refNo + '</span>' : '')
       + '</div>'
-      + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'
+      + '<div style="display:flex;align-items:center;gap:6px">'
       + '<div class="ctn-pcs">' + (c.totalPcs || 0) + ' PCS</div>'
-      + '<div style="display:flex;gap:6px">'
       + '<button class="btn btn-primary" style="padding:5px 10px;font-size:.72rem" onclick="openEditCarton(\'' + c.id + '\')">✏️</button>'
       + '<button class="btn btn-ghost" style="padding:5px 10px;font-size:.72rem" onclick="printLabelById(\'' + pl.id + '\',\'' + c.id + '\')">🖨️</button>'
       + '</div>'
+      + '</div>'
+      + '<div style="font-size:.8rem;margin-bottom:3px"><span style="color:var(--text-muted);font-size:.72rem">STYLE </span><span style="color:var(--text);font-weight:700">' + styleStr + '</span></div>'
+      + '<div style="font-size:.8rem;margin-bottom:3px"><span style="color:var(--text-muted);font-size:.72rem">COLOR </span><span style="color:var(--text)">' + colorStr + '</span></div>'
+      + '<div style="font-size:.8rem;margin-bottom:3px"><span style="color:var(--text-muted);font-size:.72rem">SIZE &nbsp;</span><span style="color:var(--text)">' + sizeStr + '</span></div>'
+      + '<div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-muted);margin-top:5px">'
+      + '<span style="color:var(--blue);font-weight:700">' + (c.createdBy || '—') + '</span>'
+      + '<span>' + ts + (c.weight ? ' | ' + c.weight + 'kg' : '') + '</span>'
       + '</div>'
       + '</div>';
   }).join('');
@@ -1617,44 +1644,32 @@ function applyTheme() {
   }
 }
 
-// ══ WINDOW ONLOAD ══
 window.onload = function() {
-  applyTheme();
   load();
-  // Restore session
+  applyTheme();
+  updateStatus();
   var savedUser = localStorage.getItem('current_user');
-  var savedName = localStorage.getItem('worker_name');
-  if (savedUser && savedName) {
-    try { currentUser = JSON.parse(savedUser); } catch(e) { currentUser = null; }
-    if (currentUser) {
-      workerName = savedName;
+  if (savedUser) {
+    try {
+      currentUser = JSON.parse(savedUser);
+      workerName = currentUser.name || currentUser.username || '';
       updateWorkerNameUI();
       document.getElementById('main-header').style.display = '';
-      updateStatus();
       if (SB_URL && SB_KEY) {
         loadFromSupabase(function(ok) {
-          if (ok) showToast('Data dimuatkan.');
+          if (ok) showToast('✅ Data dimuatkan.');
+          showHome();
         });
-      }
-      if (!SB_URL || !SB_KEY) {
-        showSetup();
       } else {
         showHome();
       }
-      return;
+    } catch(e) {
+      showScreen('screen-login');
     }
+  } else {
+    showScreen('screen-login');
   }
-  // No session — show login
-  updateStatus();
-  document.getElementById('main-header').style.display = 'none';
-  showScreen('screen-login');
-  setTimeout(function() {
-    var el = document.getElementById('login-username');
-    if (el) el.focus();
-  }, 300);
 };
 </script>
-
-<div id="print-label-area-out" class="print-label-area"></div>
 </body>
 </html>
