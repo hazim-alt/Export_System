@@ -1653,15 +1653,7 @@ function printCartonLabel(plId, ctnId) {
 function printAllLabels(plId) {
   var pl = getPL(plId);
   if (!pl || pl.cartons.length === 0) { toast('No cartons untuk diprint!'); return; }
-  var sorted = pl.cartons.slice().sort(function(a,b){
-    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
-    if (ad !== bd) return ad.localeCompare(bd);
-    var ai = getCartonItems(a), bi = getCartonItems(b);
-
-    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
-    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
-  });
+  var sorted = pl.cartons.slice().sort(function(a,b){ return (a.boxNo||0) - (b.boxNo||0); });
   var slots = sorted.map(function(c) { return cartonLabelFields(pl, c); });
   var pages = '';
   for (var i = 0; i < slots.length; i += 2) {
@@ -1722,6 +1714,12 @@ function renderDash() {
   document.getElementById('d-pending').textContent = Math.max(0, totalExpected - totalPacked);
   const el = document.getElementById('dash-pl-list');
   if (pls.length === 0) { el.innerHTML = '<p style="text-align:center;color:#aaa;padding:20px">No data.</p>'; return; }
+  // Save horizontal scroll positions before re-render
+  var _scrollPos = {};
+  pls.forEach(function(pl) {
+    var b = document.getElementById('dash-body-' + pl.id);
+    if (b) _scrollPos[pl.id] = b.scrollLeft;
+  });
   el.innerHTML = pls.map(function(pl) {
     const packed = pl.cartons.length;
     const total = pl.total || packed;
@@ -1748,6 +1746,13 @@ function renderDash() {
       + '<table class="tbl"><thead><tr><th>Box No</th><th>Style</th><th>Color</th><th>Size</th><th>Total PCS</th><th>Time</th><th>Created By</th><th>Verified By</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table></div></div>';
   }).join('');
+  // Restore horizontal scroll positions after re-render
+  setTimeout(function() {
+    pls.forEach(function(pl) {
+      var b = document.getElementById('dash-body-' + pl.id);
+      if (b && _scrollPos[pl.id]) b.scrollLeft = _scrollPos[pl.id];
+    });
+  }, 0);
 }
 
 // ══ WHATSAPP REPORT ══
@@ -1820,13 +1825,12 @@ function printPLDoc() {
 
 function buildPLDoc(pl) {
   var sorted = pl.cartons.slice().sort(function(a,b){
-    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+    var ad = localDate(a.ts), bd = localDate(b.ts);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
-
     var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
     var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+    return as_.localeCompare(bs_) || ac - bc || (a.boxNo||0) - (b.boxNo||0);
   });
   var totalCtns = sorted.length;
   var totalPcsAll = sorted.reduce(function(s,c){ return s+(c.totalPcs||0); }, 0);
@@ -2066,15 +2070,7 @@ function renderScanList() {
   if (!el) return;
   var pl = scanSelectedPLId ? getPL(scanSelectedPLId) : null;
   if (!pl) { el.innerHTML = ''; return; }
-  var sorted = pl.cartons.slice().sort(function(a,b){
-    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
-    if (ad !== bd) return ad.localeCompare(bd);
-    var ai = getCartonItems(a), bi = getCartonItems(b);
-
-    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
-    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
-  });
+  var sorted = pl.cartons.slice().sort(function(a,b){ return (a.boxNo||0) - (b.boxNo||0); });
   var scannedCount = sorted.filter(function(c){ return scannedMap[c.id]; }).length;
   var total = sorted.length;
   var pct = total > 0 ? Math.round(scannedCount/total*100) : 0;
@@ -2124,15 +2120,7 @@ function downloadCSV() {
   var sizeHeaders = SIZES.join(',');
   rows.push('PL Name,Invoice No,Destination,Box No,Style,Color Code,Color Name,' + sizeHeaders + ',Total PCS,Weight (kg),Measure,Packed At');
   pls.forEach(function(pl) {
-    var sorted = pl.cartons.slice().sort(function(a,b){
-    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
-    if (ad !== bd) return ad.localeCompare(bd);
-    var ai = getCartonItems(a), bi = getCartonItems(b);
-
-    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
-    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
-  });
+    var sorted = pl.cartons.slice().sort(function(a,b){ return (a.boxNo||0) - (b.boxNo||0); });
     sorted.forEach(function(c) {
       var items = getCartonItems(c);
       items.forEach(function(it) {
@@ -2584,8 +2572,8 @@ window.onload = function() {
               if (localCartonIds.indexOf(rc.id) === -1) { mergedCartons.push(rc); }
             });
             var merged = Object.assign({}, remote, { cartons: mergedCartons });
+            if (JSON.stringify(pls[idx]) !== JSON.stringify(merged)) changed = true;
             pls[idx] = merged;
-            changed = true;
           } else {
             var newPl = row.data;
             if (deletedCartonIds.length && newPl.cartons) {
