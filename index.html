@@ -1385,6 +1385,9 @@ function _pushToSupabase() {
   fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: h, body: JSON.stringify(plPayload) }).catch(function(){});
 }
 function _mergeRemote(rows) {
+  var remoteIds = rows.filter(function(r){ return r.data && r.data.id; }).map(function(r){ return r.data.id; });
+  // Remove local PLs deleted on other devices (not in remote anymore)
+  pls = pls.filter(function(p){ return remoteIds.indexOf(p.id) !== -1; });
   var localIds = pls.map(function(p){ return p.id; });
   rows.forEach(function(row) {
     if (!row.data || !row.data.id) return;
@@ -1416,9 +1419,22 @@ function loadFromSupabase(cb) {
     .then(function(rows) {
       if (!Array.isArray(rows)) { cb(false); return; }
       var remote = rows.map(function(row){ return row.data; }).filter(function(pl){ return pl && pl.id; });
-      if (remote.length === 0) { cb(false); return; }
-      if (pls.length > 0) { _mergeRemote(rows); } else { pls = remote; localStorage.setItem('export_pls', JSON.stringify(pls)); }
-      cb(true);
+      // Remote is source of truth for PL list — PLs deleted on web will be removed here
+      var localMap = {};
+      pls.forEach(function(p){ localMap[p.id] = p; });
+      pls = remote.map(function(remotePL) {
+        var local = localMap[remotePL.id];
+        if (local) {
+          // Merge cartons: keep local + add remote cartons not seen locally
+          var localCartonIds = (local.cartons||[]).map(function(c){ return c.id; });
+          var merged = (local.cartons||[]).slice();
+          (remotePL.cartons||[]).forEach(function(rc){ if (localCartonIds.indexOf(rc.id) === -1) merged.push(rc); });
+          return Object.assign({}, remotePL, { cartons: merged });
+        }
+        return remotePL;
+      });
+      localStorage.setItem('export_pls', JSON.stringify(pls));
+      cb(pls.length > 0);
     }).catch(function(){ cb(false); });
 }
 
@@ -1654,8 +1670,6 @@ function applyTheme() {
   if (t === 'light') {
     document.documentElement.classList.add('light');
     var btn = document.getElementById('btn-theme');
-    if (btn) btn.textContent = '☀️';
-  } else {
     document.documentElement.classList.remove('light');
     var btn = document.getElementById('btn-theme');
     if (btn) btn.textContent = '🌙';
