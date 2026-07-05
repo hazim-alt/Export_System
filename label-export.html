@@ -2598,16 +2598,12 @@ window.onload = function() {
     _isSyncingAt = Date.now();
     if (_dirty) {
       _dirty = false; // clear dulu — kalau save lagi masa sync, akan jadi true balik
-      syncToSheets(function() {
-        if (_dirty) {
-          // Ada save baru masa sync tadi — jangan merge (data Supabase belum terkini), biar tick seterusnya push balik
+      // Pull + merge dulu, BARU push — supaya carton dari device lain tak hilang
+      mergeFromSheets(function() {
+        syncToSheets(function() {
           _isSyncing = false;
-        } else {
-          mergeFromSheets(function(ok) {
-            _isSyncing = false;
-            if (ok) { renderAll(); }
-          });
-        }
+          renderAll();
+        });
       });
     } else {
       // Takde save baru — terus pull je (lagi laju)
