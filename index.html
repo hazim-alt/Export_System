@@ -1416,26 +1416,14 @@ function syncToSupabase() {
     .catch(function(){ _pushToSupabase(); });
 }
 function loadFromSupabase(cb) {
+  // Full overwrite — Supabase is source of truth on load/refresh
   if (!SB_URL || !SB_KEY) { cb(false); return; }
   fetch(SB_URL + '/rest/v1/packing_lists?select=data&order=updated_at.desc', { headers: sbHeaders() })
     .then(function(r){ return r.json(); })
     .then(function(rows) {
       if (!Array.isArray(rows)) { cb(false); return; }
       var remote = rows.map(function(row){ return row.data; }).filter(function(pl){ return pl && pl.id; });
-      // Remote is source of truth for PL list — PLs deleted on web will be removed here
-      var localMap = {};
-      pls.forEach(function(p){ localMap[p.id] = p; });
-      pls = remote.map(function(remotePL) {
-        var local = localMap[remotePL.id];
-        if (local) {
-          // Merge cartons: keep local + add remote cartons not seen locally
-          var localCartonIds = (local.cartons||[]).map(function(c){ return c.id; });
-          var merged = (local.cartons||[]).slice();
-          (remotePL.cartons||[]).forEach(function(rc){ if (localCartonIds.indexOf(rc.id) === -1) merged.push(rc); });
-          return Object.assign({}, remotePL, { cartons: merged });
-        }
-        return remotePL;
-      });
+      pls = remote;
       localStorage.setItem('export_pls', JSON.stringify(pls));
       cb(pls.length > 0);
     }).catch(function(){ cb(false); });
@@ -1695,8 +1683,9 @@ window.onload = function() {
           if (ok) showToast('✅ Data dimuatkan.');
           showHome();
           // Auto-sync setiap 5s — pastikan data mobile converge lepas race condition
+          // Pull-only every 5s — keep in sync with web without pushing stale data
           setInterval(function() {
-            if (SB_URL && SB_KEY) syncToSupabase();
+            if (SB_URL && SB_KEY) loadFromSupabase(function(){});
           }, 5000);
         });
       } else {
