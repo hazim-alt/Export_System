@@ -444,6 +444,9 @@ if ('serviceWorker' in navigator) {
       <button class="btn btn-primary" id="login-btn" onclick="submitLogin()" style="width:100%;padding:14px;font-size:1rem;border-radius:12px">
         ✅ Log In
       </button>
+      <button class="btn btn-ghost" onclick="showSetup()" style="width:100%;margin-top:10px;padding:10px;font-size:.85rem;border-radius:12px;opacity:.7">
+        ⚙️ Setup Supabase
+      </button>
     </div>
   </div>
 </div>
@@ -1691,6 +1694,10 @@ window.onload = function() {
         loadFromSupabase(function(ok) {
           if (ok) showToast('✅ Data dimuatkan.');
           showHome();
+          // Auto-sync setiap 5s — pastikan data mobile converge lepas race condition
+          setInterval(function() {
+            if (SB_URL && SB_KEY) syncToSupabase();
+          }, 5000);
         });
       } else {
         showHome();
