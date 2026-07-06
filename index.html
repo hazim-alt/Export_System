@@ -1481,6 +1481,11 @@ function saveCarton(doPrint) {
     toast('✅ Box ' + String(autoBoxNo).padStart(3,'0') + ' (Ref ' + refNo + ') saved!');
     if (doPrint) printCartonLabel(plId, carton.id);
     openCartonList(plId);
+    // Push to Supabase immediately — jangan tunggu autoSync 3 saat
+    if (SB_URL && SB_KEY && !_isSyncing) {
+      _dirty = false;
+      syncToSheets(function() { renderAll(); });
+    }
   }
 
   if (!editId && SB_URL && SB_KEY) {
@@ -2729,6 +2734,23 @@ window.onload = function() {
             localIds.push(newPl.id);
             changed = true;
           }
+        });
+        // Auto-fix duplicate refNos within each PL (safety net for race condition)
+        pls.forEach(function(pl) {
+          var seenRefs = {};
+          var maxRef = 0;
+          (pl.cartons||[]).forEach(function(c) {
+            var r = parseInt(c.refNo)||0; if (r > maxRef) maxRef = r;
+          });
+          (pl.cartons||[]).forEach(function(c) {
+            var r = c.refNo ? String(c.refNo) : '';
+            if (!r) return;
+            if (seenRefs[r]) {
+              maxRef++;
+              c.refNo = String(maxRef);
+              changed = true; // akan push fix ke Supabase
+            } else { seenRefs[r] = true; }
+          });
         });
         if (changed || hasLocalExtra) { localStorage.setItem('export_pls', JSON.stringify(pls)); }
         callback(changed, hasLocalExtra);
