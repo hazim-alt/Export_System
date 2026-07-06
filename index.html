@@ -1499,26 +1499,34 @@ function saveCarton(doPrint) {
   openCartonList(plId);
   if (doPrint) printCartonLabel(plId, carton.id);
 
-  // Push PL ke Supabase DULU (1 request, ~200ms) — pastikan device lain nampak carton baru
-  // Baru tunjuk popup — so phone yang buka form lepas ni dapat ref no betul
-  function _showRefPopup() {
+  function _showRefPopup(finalRef) {
     setTimeout(function() {
-      document.getElementById('refno-confirm-num').textContent = refNo;
+      document.getElementById('refno-confirm-num').textContent = finalRef;
       openModal('modal-refno-confirm');
-    }, 150); // 150ms delay untuk touch event settle
+    }, 150);
+    if (SB_URL && SB_KEY && !_isSyncing) { _dirty = false; syncToSheets(function() { renderAll(); }); }
   }
 
-  if (SB_URL && SB_KEY) {
-    var plPayload = [{ id: pl.id, name: pl.name || '', status: pl.status || 'active',
-      total_boxes: pl.total || 0, carton_count: (pl.cartons || []).length,
-      data: pl, updated_at: new Date().toISOString() }];
-    fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
-      .then(function() { _showRefPopup(); })
-      .catch(function() { _showRefPopup(); });
-    // Sync carton rows dalam background (tak perlu tunggu untuk popup)
-    if (!_isSyncing) { _dirty = false; syncToSheets(function() { renderAll(); }); }
+  if (!editId && SB_URL && SB_KEY) {
+    // Guna Supabase RPC untuk assign ref no secara atomic — 100% unique, tiada race condition
+    fetch(SB_URL + '/rest/v1/rpc/claim_ref_no', {
+      method: 'POST', headers: sbHeaders(),
+      body: JSON.stringify({ p_pl_id: plId })
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(nextRef) {
+        var finalRef = String(nextRef);
+        // Update ref no carton yang baru disimpan
+        var idx = pl.cartons.findIndex(function(c) { return c.id === carton.id; });
+        if (idx !== -1) { pl.cartons[idx].refNo = finalRef; save(); }
+        _showRefPopup(finalRef);
+      })
+      .catch(function() {
+        // Fallback: guna local max jika RPC gagal
+        _showRefPopup(refNo);
+      });
   } else {
-    _showRefPopup();
+    _showRefPopup(refNo);
   }
 }
 
