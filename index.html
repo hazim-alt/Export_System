@@ -344,12 +344,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
     <input type="hidden" id="ctn-pl-id" />
     <input type="hidden" id="ctn-edit-id" />
 
-    <div class="g2" style="margin-bottom:12px">
-      <div class="fg">
-        <label>Ref No.</label>
-        <input type="text" id="ctn-refno" placeholder="e.g. KFA-001" />
-      </div>
-    </div>
+    <input type="hidden" id="ctn-refno" />
 
     <!-- Dynamic item rows -->
     <div id="modal-items"></div>
@@ -1437,31 +1432,8 @@ function openAddCarton(plId) {
   var cwEl=document.getElementById('ctn-weight'); if(cwEl) cwEl.value='';
   var cmEl=document.getElementById('ctn-measure'); if(cmEl) cmEl.value='72x46x31.5';
   clearItemRows('modal');
-  // Show form first with loading indicator
-  var refInput = document.getElementById('ctn-refno');
-  refInput.value = '...';
-  refInput.disabled = true;
+  document.getElementById('ctn-refno').value = '';
   openModal('modal-carton');
-  function _setRef(cartons) {
-    var maxRef = cartons.length > 0 ? Math.max.apply(null, cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0;
-    refInput.value = String(maxRef + 1);
-    refInput.disabled = false;
-  }
-  if (SB_URL && SB_KEY) {
-    fetch(SB_URL + '/rest/v1/packing_lists?id=eq.' + plId + '&select=data', { headers: sbHeaders() })
-      .then(function(r){ return r.json(); })
-      .then(function(rows) {
-        var remoteCtns = (rows[0] && rows[0].data && rows[0].data.cartons) || [];
-        // Merge local + remote cartons to get true max
-        var allIds = {};
-        var merged = [];
-        pl.cartons.concat(remoteCtns).forEach(function(c){ if(!allIds[c.id]){ allIds[c.id]=1; merged.push(c); } });
-        _setRef(merged);
-      })
-      .catch(function(){ _setRef(pl.cartons); });
-  } else {
-    _setRef(pl.cartons);
-  }
 }
 
 function saveCarton(doPrint) {
@@ -1474,12 +1446,11 @@ function saveCarton(doPrint) {
   // Tutup modal SEBELUM proses — cegah double-save
   closeModal('modal-carton');
 
-  // Guna nilai ref no dari form (openAddCarton dah pull Supabase untuk dapat nilai betul)
-  // Fallback ke local max jika form value tak ada / masih loading
-  var refNo = (v('ctn-refno')||'').trim();
-  if (!refNo || refNo === '...' || isNaN(parseInt(refNo))) {
-    refNo = String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
-  }
+  // Untuk edit: ambil refNo dari hidden field (set oleh editCarton)
+  // Untuk new: guna local max+1 sebagai placeholder (akan diganti oleh RPC)
+  var refNo = editId
+    ? ((v('ctn-refno')||'').trim() || '0')
+    : String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
 
   const tPcs = items.reduce((s,it) => s + it.pcs, 0);
   var autoBoxNo = editId
@@ -1507,9 +1478,14 @@ function saveCarton(doPrint) {
     if (SB_URL && SB_KEY && !_isSyncing) { _dirty = false; syncToSheets(function() { renderAll(); }); }
   }
 
+  function _rollbackCarton() {
+    pl.cartons = pl.cartons.filter(function(c) { return c.id !== carton.id; });
+    pl.cartons.sort(function(a,b){ return a.boxNo - b.boxNo; });
+    save(); renderDash(); openCartonList(plId);
+  }
+
   if (!editId && SB_URL && SB_KEY) {
-    // Guna Supabase RPC untuk assign ref no secara atomic — 100% unique, tiada race condition
-    // Note: guna headers tanpa 'Prefer:return=minimal' supaya RPC return value
+    // RPC atomic: assign ref no unik dari Supabase
     var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
     fetch(SB_URL + '/rest/v1/rpc/claim_ref_no', {
       method: 'POST', headers: rpcHeaders,
@@ -1529,10 +1505,12 @@ function saveCarton(doPrint) {
         _showRefPopup(finalRef);
       })
       .catch(function(e) {
-        toast('⚠️ RPC: ' + (e && e.message ? e.message : String(e)));
-        _showRefPopup(refNo);
+        // RPC gagal — rollback carton, jangan simpan dengan ref no yang mungkin salah
+        _rollbackCarton();
+        toast('\u26a0\ufe0f Gagal dapatkan Ref No dari server. Carton tidak disimpan. Cuba lagi dalam sebentar.');
       });
   } else {
+    // Offline / no Supabase — guna local ref no
     _showRefPopup(refNo);
   }
 }
