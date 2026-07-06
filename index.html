@@ -1499,20 +1499,14 @@ function saveCarton(doPrint) {
   openCartonList(plId);
   if (doPrint) printCartonLabel(plId, carton.id);
 
-  // Push ke Supabase DULU, baru tunjuk popup
-  // — pastikan device lain dapat ref no betul bila buka form
-  function _showPopup() {
-    document.getElementById('refno-confirm-num').textContent = refNo;
-    openModal('modal-refno-confirm');
-  }
+  // Tunjuk popup terus — staff nampak ref no segera
+  document.getElementById('refno-confirm-num').textContent = refNo;
+  openModal('modal-refno-confirm');
+
+  // Push Supabase dalam background (tak kacau popup)
   if (SB_URL && SB_KEY && !_isSyncing) {
     _dirty = false;
-    syncToSheets(function() {
-      renderAll();
-      _showPopup();
-    });
-  } else {
-    _showPopup();
+    syncToSheets(function() { renderAll(); });
   }
 }
 
