@@ -1457,34 +1457,55 @@ function openAddCarton(plId) {
 function saveCarton(doPrint) {
   const plId = v('ctn-pl-id');
   const pl = getPL(plId); if (!pl) return;
-  const refNo = (v('ctn-refno')||'').trim();
   const items = getItemRowsData('modal');
   if (!items.length || !items[0].style) { toast('⚠️ Please select Item Description!'); return; }
   const editId = v('ctn-edit-id');
-  if (refNo && !editId) {
-    var dupRef = pl.cartons.find(function(c){ return String(c.refNo||'') === String(refNo); });
-    if (dupRef) { toast('⚠️ Ref No ' + refNo + ' dah digunakan dalam PL ni!'); return; }
+
+  function _doSave(refNo) {
+    const tPcs = items.reduce((s,it) => s + it.pcs, 0);
+    var autoBoxNo = editId
+      ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
+      : (pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1);
+    const carton = {
+      id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
+      totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
+      ts: editId ? ((pl.cartons.find(function(x){ return x.id === editId; })||{}).ts || new Date().toISOString()) : new Date().toISOString(),
+      createdBy: currentUser ? currentUser.name : '—'
+    };
+    if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
+    else pl.cartons.push(carton);
+    pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
+    save();
+    closeModal('modal-carton');
+    renderDash();
+    toast('✅ Box ' + String(autoBoxNo).padStart(3,'0') + ' (Ref ' + refNo + ') saved!');
+    if (doPrint) printCartonLabel(plId, carton.id);
+    openCartonList(plId);
   }
-  const tPcs = items.reduce((s,it) => s + it.pcs, 0);
-  // Auto-assign boxNo: keep existing if edit, else max+1
-  var autoBoxNo = editId
-    ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
-    : (pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1);
-  const carton = {
-    id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
-    totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
-    ts: editId ? ((pl.cartons.find(function(x){ return x.id === editId; })||{}).ts || new Date().toISOString()) : new Date().toISOString(),
-    createdBy: currentUser ? currentUser.name : '—'
-  };
-  if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
-  else pl.cartons.push(carton);
-  pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
-  save();
-  closeModal('modal-carton');
-  renderDash();
-  toast(`✅ Box ${String(autoBoxNo).padStart(3,'0')} saved!`);
-  if (doPrint) printCartonLabel(plId, carton.id);
-  openCartonList(plId);
+
+  if (!editId && SB_URL && SB_KEY) {
+    // Re-fetch Supabase at save time to get true max refNo — prevents race condition
+    fetch(SB_URL + '/rest/v1/packing_lists?id=eq.' + plId + '&select=data', { headers: sbHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(rows) {
+        var remoteCtns = (rows[0] && rows[0].data && rows[0].data.cartons) || [];
+        var allIds = {};
+        var merged = [];
+        pl.cartons.concat(remoteCtns).forEach(function(c){ if(!allIds[c.id]){ allIds[c.id]=1; merged.push(c); } });
+        merged = merged.filter(function(c){ return deletedCartonIds.indexOf(c.id) === -1; });
+        var maxRef = merged.length > 0 ? Math.max.apply(null, merged.map(function(c){ return parseInt(c.refNo)||0; })) : 0;
+        _doSave(String(maxRef + 1));
+      })
+      .catch(function(){
+        var maxRef = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0;
+        _doSave(String(maxRef + 1));
+      });
+  } else {
+    var refNo = editId
+      ? (v('ctn-refno')||''). trim()
+      : String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
+    _doSave(refNo);
+  }
 }
 
 
@@ -2769,7 +2790,7 @@ window.onload = function() {
       if (dy > 5) {
         var prog = Math.min(dy / THRESH, 1);
         ind.style.opacity = prog;
-        ind.style.transform = 'translateX(-50%) translateY(' + Math.min(dy * 0.4, 20) + 'px)';
+            ind.style.transform = 'translateX(-50%) translateY(' + Math.min(dy * 0.4, 20) + 'px)';
         ind.textContent = dy >= THRESH ? 'Lepas untuk refresh!' : 'Tarik untuk refresh...';
       }
     }, {passive:true});
@@ -2787,6 +2808,7 @@ window.onload = function() {
       }
     }, {passive:true});
   })();
+
 };
 </script>
 </body>
