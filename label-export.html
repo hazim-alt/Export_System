@@ -1423,14 +1423,35 @@ function openAddCarton(plId) {
   const pl = getPL(plId); if (!pl) return;
   document.getElementById('ctn-pl-id').value = plId;
   document.getElementById('ctn-edit-id').value = '';
-  document.getElementById('modal-ctn-title').textContent = `📦 Add Carton — ${pl.name}`;
-  const nextBox = pl.cartons.length > 0 ? Math.max(...pl.cartons.map(c=>c.boxNo)) + 1 : 1;
-  var nextRef = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) + 1 : 1;
-  document.getElementById('ctn-refno').value = String(nextRef);
+  document.getElementById('modal-ctn-title').textContent = '📦 Add Carton — ' + pl.name;
   var cwEl=document.getElementById('ctn-weight'); if(cwEl) cwEl.value='';
   var cmEl=document.getElementById('ctn-measure'); if(cmEl) cmEl.value='72x46x31.5';
   clearItemRows('modal');
+  // Show form first with loading indicator
+  var refInput = document.getElementById('ctn-refno');
+  refInput.value = '...';
+  refInput.disabled = true;
   openModal('modal-carton');
+  function _setRef(cartons) {
+    var maxRef = cartons.length > 0 ? Math.max.apply(null, cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0;
+    refInput.value = String(maxRef + 1);
+    refInput.disabled = false;
+  }
+  if (SB_URL && SB_KEY) {
+    fetch(SB_URL + '/rest/v1/packing_lists?id=eq.' + plId + '&select=data', { headers: sbHeaders() })
+      .then(function(r){ return r.json(); })
+      .then(function(rows) {
+        var remoteCtns = (rows[0] && rows[0].data && rows[0].data.cartons) || [];
+        // Merge local + remote cartons to get true max
+        var allIds = {};
+        var merged = [];
+        pl.cartons.concat(remoteCtns).forEach(function(c){ if(!allIds[c.id]){ allIds[c.id]=1; merged.push(c); } });
+        _setRef(merged);
+      })
+      .catch(function(){ _setRef(pl.cartons); });
+  } else {
+    _setRef(pl.cartons);
+  }
 }
 
 function saveCarton(doPrint) {
@@ -1439,8 +1460,12 @@ function saveCarton(doPrint) {
   const refNo = (v('ctn-refno')||'').trim();
   const items = getItemRowsData('modal');
   if (!items.length || !items[0].style) { toast('⚠️ Please select Item Description!'); return; }
-  const tPcs = items.reduce((s,it) => s + it.pcs, 0);
   const editId = v('ctn-edit-id');
+  if (refNo && !editId) {
+    var dupRef = pl.cartons.find(function(c){ return String(c.refNo||'') === String(refNo); });
+    if (dupRef) { toast('⚠️ Ref No ' + refNo + ' dah digunakan dalam PL ni!'); return; }
+  }
+  const tPcs = items.reduce((s,it) => s + it.pcs, 0);
   // Auto-assign boxNo: keep existing if edit, else max+1
   var autoBoxNo = editId
     ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
@@ -2649,13 +2674,19 @@ window.onload = function() {
         if (!Array.isArray(plRows)) { callback(false); return; }
         var localIds = pls.map(function(p) { return p.id; });
         var changed = false;
+        var hasLocalExtra = false;
         plRows.forEach(function(row) {
           if (!row.data) return;
           if (deletedPLIds.indexOf(row.data.id) !== -1) return;
           var idx = localIds.indexOf(row.data.id);
           if (idx !== -1) {
             var remote = row.data;
+            var remoteCartonIds = (remote.cartons||[]).map(function(c){ return c.id; });
             var localCartonIds = (pls[idx].cartons||[]).map(function(c){ return c.id; });
+            // Detect local cartons not yet in Supabase
+            (pls[idx].cartons||[]).forEach(function(c){
+              if (deletedCartonIds.indexOf(c.id) === -1 && remoteCartonIds.indexOf(c.id) === -1) hasLocalExtra = true;
+            });
             var remoteCartons = (remote.cartons||[]).filter(function(c){
               return deletedCartonIds.indexOf(c.id) === -1;
             });
@@ -2678,8 +2709,8 @@ window.onload = function() {
             changed = true;
           }
         });
-        if (changed) { localStorage.setItem('export_pls', JSON.stringify(pls)); callback(true); }
-        else callback(false);
+        if (changed || hasLocalExtra) { localStorage.setItem('export_pls', JSON.stringify(pls)); }
+        callback(changed, hasLocalExtra);
       })
       .catch(function() { callback(false); });
   }
@@ -2699,9 +2730,17 @@ window.onload = function() {
         });
       });
     } else {
-      mergeFromSheets(function(ok) {
-        _isSyncing = false;
-        if (ok) { renderAll(); }
+      mergeFromSheets(function(ok, hasLocalExtra) {
+        if (hasLocalExtra) {
+          // Local ada carton yang belum dalam Supabase — push sekarang
+          syncToSheets(function() {
+            _isSyncing = false;
+            renderAll();
+          });
+        } else {
+          _isSyncing = false;
+          if (ok) { renderAll(); }
+        }
       });
     }
   }
