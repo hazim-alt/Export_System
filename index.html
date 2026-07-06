@@ -1487,11 +1487,11 @@ function saveCarton(doPrint) {
         var finalRef = String(parseInt(assignedRef));
         var idx = pl.cartons.findIndex(function(c) { return c.id === carton.id; });
         if (idx !== -1) { pl.cartons[idx].refNo = finalRef; save(); }
-        if (!_isSyncing) syncToSheets(function() { renderAll(); });
+        _dirty = true;
         setTimeout(function() {
           document.getElementById('refno-confirm-num').textContent = finalRef;
           openModal('modal-refno-confirm');
-        }, 150);
+        }, 300);
       })
       .catch(function(e) {
         // RPC fail — simpan carton, sync pada next tick, popup terus
@@ -1499,7 +1499,7 @@ function saveCarton(doPrint) {
         setTimeout(function() {
           document.getElementById('refno-confirm-num').textContent = refNo;
           openModal('modal-refno-confirm');
-        }, 150);
+        }, 300);
       });
   } else {
     setTimeout(function() {
