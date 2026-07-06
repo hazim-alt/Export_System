@@ -1494,9 +1494,8 @@ function saveCarton(doPrint) {
         }, 150);
       })
       .catch(function(e) {
-        // RPC fail — tetap simpan carton, tunjuk ref no tempatan
-        // Auto-fix dedup akan handle selepas sync
-        if (!_isSyncing) syncToSheets(function() { renderAll(); });
+        // RPC fail — simpan carton, sync pada next tick, popup terus
+        _dirty = true;
         setTimeout(function() {
           document.getElementById('refno-confirm-num').textContent = refNo;
           openModal('modal-refno-confirm');
