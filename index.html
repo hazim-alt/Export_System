@@ -1489,9 +1489,9 @@ function saveCarton(doPrint) {
     // Retry up to 3x kalau fail (network issue sekejap)
     var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
     function _tryRPC(attemptsLeft) {
-      fetch(SB_URL + '/rest/v1/rpc/save_carton_atomic', {
+      fetch(SB_URL + '/rest/v1/rpc/claim_ref_no_v2', {
         method: 'POST', headers: rpcHeaders,
-        body: JSON.stringify({ p_pl_id: plId, p_carton: carton })
+        body: JSON.stringify({ p_pl_id: plId })
       })
         .then(function(r) {
           if (!r.ok) { return r.text().then(function(t){ throw new Error(r.status + ': ' + t.slice(0,60)); }); }
