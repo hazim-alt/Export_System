@@ -1325,12 +1325,13 @@ function renderPLList() {
             <div class="prog-bar" style="width:${isCompleted ? 100 : pct}%;background:${isCompleted ? '#16a34a' : ''}"></div>
           </div>
         </div>
-        <div class="pl-card-actions">
-          <button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" onclick="openCartonList('${pl.id}')">📦 Cartons (${packed})</button><button class="btn" style="background:#25D366;color:#fff;border-color:#25D366;padding:6px 10px;font-size:.78rem" onclick="shareToWhatsApp('${pl.id}')">&#128242;</button>
-          ${isCompleted ? '' : `<button class="btn btn-grey" style="padding:6px 12px;font-size:.78rem" onclick="editPL('${pl.id}')">✏️</button>`}
-          ${isCompleted ? '' : `<button class="btn btn-red" style="padding:6px 12px;font-size:.78rem" onclick="deletePL('${pl.id}')">🗑️</button>`}
-          ${isCompleted ? `<button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" onclick="unlockPL('${pl.id}')">🔓 Unlock</button>` : ''}
-        </div>
+      </div>
+      <div style="padding:0 16px 12px;display:flex;flex-wrap:wrap;gap:6px">
+        <button class="btn btn-ghost" style="font-size:.8rem" onclick="openCartonList('${pl.id}')">📦 Cartons (${packed})</button>
+        <button class="btn" style="background:#25D366;color:#fff;border-color:#25D366;font-size:.8rem" onclick="shareToWhatsApp('${pl.id}')">&#128242; Share</button>
+        ${isCompleted ? '' : `<button class="btn btn-grey" style="font-size:.8rem" onclick="editPL('${pl.id}')">✏️ Edit</button>`}
+        ${isCompleted ? '' : `<button class="btn btn-red" style="font-size:.8rem" onclick="deletePL('${pl.id}')">🗑️</button>`}
+        ${isCompleted ? `<button class="btn btn-ghost" style="font-size:.8rem" onclick="unlockPL('${pl.id}')">🔓 Unlock</button>` : ''}
       </div>
     </div>`;
   }).join('');
