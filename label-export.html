@@ -344,12 +344,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
     <input type="hidden" id="ctn-pl-id" />
     <input type="hidden" id="ctn-edit-id" />
 
-    <div class="g2" style="margin-bottom:12px">
-      <div class="fg">
-        <label>Ref No.</label>
-        <input type="text" id="ctn-refno" placeholder="e.g. KFA-001" />
-      </div>
-    </div>
+    <input type="hidden" id="ctn-refno" />
 
     <!-- Dynamic item rows -->
     <div id="modal-items"></div>
@@ -374,6 +369,50 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
       <button class="btn btn-primary btn-lg" onclick="saveCarton(false)">✅ Save</button>
       <button class="btn btn-green btn-lg" onclick="saveCarton(true)">🖨️ Save + Print Label</button>
       <button class="btn btn-grey" onclick="closeModal('modal-carton')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ REF NO CONFIRM ════ -->
+<div class="modal-overlay" id="modal-refno-confirm">
+  <div class="modal" style="max-width:320px;text-align:center;padding:32px 24px 28px">
+    <div style="font-size:.85rem;color:var(--text-muted);font-weight:700;letter-spacing:.08em;margin-bottom:8px">REF NO. CARTON</div>
+    <div id="refno-confirm-num" style="font-size:5rem;font-weight:900;color:var(--blue);line-height:1;margin:8px 0 16px"></div>
+
+    <button class="btn btn-primary btn-lg" style="width:100%;font-size:1rem" onclick="closeModal('modal-refno-confirm')">Confirm</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-print-range">
+  <div class="modal" style="max-width:340px;padding:28px 24px 24px">
+    <div style="font-weight:800;font-size:1rem;margin-bottom:18px">🖨️ Print</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button id="print-tab-range" class="btn btn-primary" style="flex:1;font-size:.8rem" onclick="switchPrintTab('range')">By Box No.</button>
+      <button id="print-tab-date" class="btn btn-grey" style="flex:1;font-size:.8rem" onclick="switchPrintTab('date')">By Date</button>
+    </div>
+    <div id="print-panel-range">
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+        <div style="flex:1">
+          <label style="font-size:.75rem;color:var(--text-muted);font-weight:700;display:block;margin-bottom:4px">FROM BOX NO.</label>
+          <input type="number" id="print-range-from" min="1" style="width:100%;text-align:center;font-size:1.2rem;font-weight:800;padding:8px" placeholder="1" />
+        </div>
+        <div style="font-size:1.5rem;color:var(--text-muted);margin-top:18px">—</div>
+        <div style="flex:1">
+          <label style="font-size:.75rem;color:var(--text-muted);font-weight:700;display:block;margin-bottom:4px">TO BOX NO.</label>
+          <input type="number" id="print-range-to" min="1" style="width:100%;text-align:center;font-size:1.2rem;font-weight:800;padding:8px" placeholder="20" />
+        </div>
+      </div>
+    </div>
+    <div id="print-panel-date" style="display:none">
+      <div style="margin-bottom:16px">
+        <label style="font-size:.75rem;color:var(--text-muted);font-weight:700;display:block;margin-bottom:6px">CREATE DATE</label>
+        <input type="date" id="print-date-val" style="width:100%;font-size:1.1rem;font-weight:700;padding:8px;text-align:center" />
+      </div>
+    </div>
+    <div id="print-range-info" style="font-size:.8rem;color:var(--text-muted);margin-bottom:16px;min-height:18px;text-align:center"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-grey" style="flex:1" onclick="closeModal('modal-print-range')">Cancel</button>
+      <button class="btn btn-primary" style="flex:2" onclick="executePrintRange()">🖨️ Print</button>
     </div>
   </div>
 </div>
@@ -1297,80 +1336,132 @@ function renderPLList() {
 }
 
 // ══ CARTON LIST (in PL) ══
+var _ctnFilters = {};
+
+function _applyCartonFilter(plId, key, val) {
+  _ctnFilters[key] = val;
+  openCartonList(plId);
+  setTimeout(function() {
+    var inp = document.querySelector('[data-filter-key="' + key + '"]');
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }, 10);
+}
+
 function openCartonList(plId) {
   const pl = getPL(plId); if (!pl) return;
   _cartonViewPlId = plId;
   const el = document.getElementById('pl-list');
 
-  var rows = '';
-  if (pl.cartons.length === 0) {
-    rows = '<tr><td colspan="18" style="text-align:center;color:#aaa;padding:20px">No cartons yet</td></tr>';
-  } else {
-    var sortedList = pl.cartons.slice().sort(function(a,b){
-      var ad = localDate(a.ts), bd = localDate(b.ts);
-      if (ad !== bd) return ad.localeCompare(bd);
-      var ai = getCartonItems(a), bi = getCartonItems(b);
+  var sortedList = pl.cartons.slice().sort(function(a,b){
+    var ad = localDate(a.ts), bd = localDate(b.ts);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
 
-      var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
-      var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-      return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
-    });
-    sortedList.forEach(function(c, cIdx) {
+  // Assign display index before filtering
+  sortedList.forEach(function(c, i) { c._dispIdx = i + 1; });
+
+  var f = _ctnFilters;
+  var filtered = sortedList.filter(function(c) {
+    var items = getCartonItems(c);
+    if (f.boxNo && String(c._dispIdx).padStart(3,'0').indexOf(f.boxNo) === -1) return false;
+    if (f.refNo && (c.refNo||'').indexOf(f.refNo) === -1) return false;
+    if (f.style && !items.some(function(it){ return (it.style||'').toLowerCase().indexOf(f.style.toLowerCase()) !== -1; })) return false;
+    if (f.colorCode && !items.some(function(it){ return (it.colorCode||'').toLowerCase().indexOf(f.colorCode.toLowerCase()) !== -1; })) return false;
+    if (f.colorName && !items.some(function(it){ return (it.colorName||'').toLowerCase().indexOf(f.colorName.toLowerCase()) !== -1; })) return false;
+    if (f.date && localDate(c.ts).indexOf(f.date) === -1) return false;
+    return true;
+  });
+
+  var rows = '';
+  if (filtered.length === 0) {
+    var colspan = 6 + SIZES.length + 4;
+    rows = '<tr><td colspan="' + colspan + '" style="text-align:center;color:#aaa;padding:20px">' + (pl.cartons.length === 0 ? 'No cartons yet' : 'No cartons match filter') + '</td></tr>';
+  } else {
+    filtered.forEach(function(c, cIdx) {
       var items = getCartonItems(c);
-      var boxStr = String(cIdx + 1).padStart(3,'0');
+      var boxStr = String(c._dispIdx).padStart(3,'0');
       var totalPcs = items.reduce(function(s,it){ return s + (it.pcs||0); }, 0);
+      var dateStr = localDate(c.ts) || '—';
       items.forEach(function(it, idx) {
-        var sizesCells = SIZES.map(function(s){ return '<td style="text-align:center">' + (it.sizes?.[s]||'') + '</td>'; }).join('');
-        var boxCell = '';
-        var refCell = '';
-        var pcsCell = '';
-        var weightMeasureCells = '';
+        var sizesCells = SIZES.map(function(s){ return '<td style="text-align:center">' + (it.sizes&&it.sizes[s] ? it.sizes[s] : '') + '</td>'; }).join('');
+        var boxCell = '', refCell = '', pcsCell = '', weightMeasureCells = '', dateCell = '';
         if (idx === 0) {
           boxCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;font-weight:800;background:var(--card-bg);text-align:center">'
             + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;justify-content:center">'
             + '<input type="checkbox" class="ctn-chk" data-id="' + c.id + '" style="width:16px;height:16px" ' + (_deselectedCartonIds.indexOf(c.id) === -1 ? 'checked' : '') + ' onchange="var id=this.dataset.id;if(this.checked){_deselectedCartonIds=_deselectedCartonIds.filter(function(x){return x!==id;});}else{if(_deselectedCartonIds.indexOf(id)===-1)_deselectedCartonIds.push(id);}" />'
             + '<span style="color:var(--text);font-size:.85rem;font-weight:800;display:block;margin-top:2px">' + boxStr + '</span></label>'
             + '<div style="margin-top:6px;display:flex;gap:4px;justify-content:center">'
-            + '<button class="btn btn-ghost" style="padding:3px 7px;font-size:.68rem" onclick="printCartonLabel(\'' + plId + '\',\'' + c.id + '\')">🖨️</button>'
-            + (pl.status !== 'completed' ? '<button class="btn btn-primary" style="padding:3px 7px;font-size:.68rem" onclick="editCarton(\'' + plId + '\',\'' + c.id + '\')">✏️</button>' : '')
+            + '<button class="btn btn-ghost" style="padding:3px 7px;font-size:.68rem" onclick="printCartonLabel(\'' + plId + '\',\'' + c.id + '\')">&#128424;&#65039;</button>'
+            + (pl.status !== 'completed' ? '<button class="btn btn-primary" style="padding:3px 7px;font-size:.68rem" onclick="editCarton(\'' + plId + '\',\'' + c.id + '\')">&#9999;&#65039;</button>' : '')
             + (pl.status !== 'completed' ? '<button class="btn btn-red" style="padding:3px 7px;font-size:.68rem" onclick="deleteCarton(\'' + plId + '\',\'' + c.id + '\')">✕</button>' : '')
             + '</div></td>';
           refCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;text-align:center;color:#aaa;font-size:.8rem">' + (c.refNo||'—') + '</td>';
           pcsCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;text-align:center"><b>' + totalPcs + '</b></td>';
           weightMeasureCells = '<td rowspan="' + items.length + '" style="vertical-align:middle">' + (c.weight||'—') + '</td>'
             + '<td rowspan="' + items.length + '" style="vertical-align:middle">' + (c.measure||'—') + '</td>';
+          dateCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;text-align:center;font-size:.75rem;color:#aaa;white-space:nowrap">' + dateStr + '</td>';
         }
         rows += '<tr>'
-          + boxCell
-          + refCell
+          + boxCell + refCell
           + '<td>' + (it.style||'—') + '</td>'
           + '<td>' + (it.colorCode||'—') + '</td>'
           + '<td>' + (it.colorName||'—') + '</td>'
           + sizesCells
-          + pcsCell
-          + weightMeasureCells
+          + pcsCell + weightMeasureCells + dateCell
           + '</tr>';
       });
     });
   }
 
+  var fv = _ctnFilters;
+  var FI = 'font-size:.7rem;padding:2px 4px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;width:100%;box-sizing:border-box';
+  var filterRow = '<tr style="background:var(--sidebar-bg)">'
+    + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:44px" placeholder="Box" data-filter-key="boxNo" value="' + (fv.boxNo||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'boxNo\',this.value)"></td>'
+    + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:36px" placeholder="Ref" data-filter-key="refNo" value="' + (fv.refNo||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'refNo\',this.value)"></td>'
+    + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:80px" placeholder="Style..." data-filter-key="style" value="' + (fv.style||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'style\',this.value)"></td>'
+    + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:44px" placeholder="Code" data-filter-key="colorCode" value="' + (fv.colorCode||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'colorCode\',this.value)"></td>'
+    + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:80px" placeholder="Color..." data-filter-key="colorName" value="' + (fv.colorName||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'colorName\',this.value)"></td>'
+    + SIZES.map(function(){ return '<td></td>'; }).join('')
+    + '<td></td><td></td><td></td>'
+    + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:80px" placeholder="YYYY-MM-DD" data-filter-key="date" value="' + (fv.date||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'date\',this.value)"></td>'
+    + '</tr>';
+
+  var activeFilters = Object.keys(_ctnFilters).filter(function(k){ return _ctnFilters[k] && _ctnFilters[k].trim(); }).length;
+  var clearBtn = activeFilters > 0 ? '<button class="btn btn-grey" style="font-size:.72rem;padding:3px 10px" onclick="_ctnFilters={};openCartonList(\'' + plId + '\')">✕ Clear Filter (' + activeFilters + ')</button>' : '';
+
   el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">'
-    + '<button class="btn btn-grey" onclick="_cartonViewPlId=null;_deselectedCartonIds=[];renderPLList()">← Back</button>'
+    + '<button class="btn btn-grey" onclick="_cartonViewPlId=null;_deselectedCartonIds=[];_ctnFilters={};renderPLList()">← Back</button>'
     + '<div><div style="font-weight:800;color:var(--blue);font-size:1rem">' + pl.name + '</div>'
-    + '<div style="font-size:.75rem;color:#888">' + pl.cartons.length + ' cartons | ' + (pl.dest||'') + '</div></div>'
-    + '<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">'
+    + '<div style="font-size:.75rem;color:#888">' + pl.cartons.length + ' cartons' + (filtered.length !== pl.cartons.length ? ' (' + filtered.length + ' shown)' : '') + ' | ' + (pl.dest||'') + '</div></div>'
+    + '<div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    + clearBtn
     + '<button class="btn btn-grey" onclick="toggleAllCartons()" id="chk-all-btn">☐ Deselect All</button>'
-    + '<button class="btn btn-primary" onclick="printSelectedLabels(\'' + plId + '\')">🖨️ Print Selected</button>'
+    + '<button class="btn btn-primary" onclick="printSelectedLabels(\'' + plId + '\')">&#128424;&#65039; Print Selected</button>'
+    + '<button class="btn btn-grey" onclick="openPrintRange(\'' + plId + '\')">🖨️ Print Range</button>'
     + '<button class="btn btn-green" onclick="openAddCarton(\'' + plId + '\')">+ Add Carton</button>'
     + '</div></div>'
-    + '<div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">'
-    + '<table class="tbl"><thead><tr>'
-    + '<th>Box No</th><th>Ref No</th><th>Style</th><th>Color Code</th><th>Color Name</th>'
-    + SIZES.map(function(s){ return '<th>' + s + '</th>'; }).join('')
-    + '<th>PCS</th><th>Weight</th><th>Measure</th>'
-    + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+    + '<div class="card" style="padding:0;overflow:hidden">'
+    + '<div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 210px)">'
+    + '<table class="tbl"><thead style="position:sticky;top:0;z-index:3">'
+    + '<tr>'
+    + '<th style="background:var(--card-bg)">Box No</th>'
+    + '<th style="background:var(--card-bg)">Ref No</th>'
+    + '<th style="background:var(--card-bg)">Style</th>'
+    + '<th style="background:var(--card-bg)">Color Code</th>'
+    + '<th style="background:var(--card-bg)">Color Name</th>'
+    + SIZES.map(function(s){ return '<th style="background:var(--card-bg)">' + s + '</th>'; }).join('')
+    + '<th style="background:var(--card-bg)">PCS</th>'
+    + '<th style="background:var(--card-bg)">Weight</th>'
+    + '<th style="background:var(--card-bg)">Measure</th>'
+    + '<th style="background:var(--card-bg)">Create Date</th>'
+    + '</tr>'
+    + filterRow
+    + '</thead><tbody>' + rows + '</tbody></table></div></div>';
 }
-
 var _testDayActive = false;
 function testDayToggle(plId) {
   var pl = getPL(plId); if (!pl || pl.cartons.length === 0) return;
@@ -1402,17 +1493,89 @@ function toggleAllCartons() {
   document.getElementById('chk-all-btn').textContent = allChecked ? '☑ Select All' : '☐ Deselect All';
 }
 
+function switchPrintTab(tab) {
+  var isRange = tab === 'range';
+  document.getElementById('print-panel-range').style.display = isRange ? '' : 'none';
+  document.getElementById('print-panel-date').style.display = isRange ? 'none' : '';
+  document.getElementById('print-tab-range').className = 'btn ' + (isRange ? 'btn-primary' : 'btn-grey');
+  document.getElementById('print-tab-date').className = 'btn ' + (isRange ? 'btn-grey' : 'btn-primary');
+  document.getElementById('print-range-info').textContent = '';
+}
+
+function openPrintRange(plId) {
+  document.getElementById('print-range-from').value = '';
+  document.getElementById('print-range-to').value = '';
+  document.getElementById('print-range-info').textContent = '';
+  document.getElementById('modal-print-range').dataset.plid = plId;
+  // Show total cartons as hint
+  var pl = getPL(plId);
+  if (pl) {
+    document.getElementById('print-range-info').textContent = pl.cartons.length + ' cartons dalam PL ini';
+  }
+  openModal('modal-print-range');
+}
+
+function executePrintRange() {
+  var plId = document.getElementById('modal-print-range').dataset.plid;
+  var pl = getPL(plId); if (!pl) return;
+  var SORT_FN = function(a,b){
+    var ad = localDate(a.ts), bd = localDate(b.ts);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  };
+  var datePanel = document.getElementById('print-panel-date');
+  var isDateMode = datePanel && datePanel.style.display !== 'none';
+  var selected; var from, to;
+  if (isDateMode) {
+    var dateVal = document.getElementById('print-date-val').value;
+    if (!dateVal) { toast('⚠️ Pilih tarikh dulu!'); return; }
+    selected = pl.cartons.filter(function(c){ return localDate(c.ts) === dateVal; }).sort(SORT_FN);
+  } else {
+    from = parseInt(document.getElementById('print-range-from').value) || 1;
+    to = parseInt(document.getElementById('print-range-to').value) || from;
+    if (from < 1 || to < from) { toast('⚠️ Range tak valid!'); return; }
+    selected = pl.cartons.slice().sort(SORT_FN).slice(from - 1, to);
+  }
+  if (selected.length === 0) { toast('⚠️ Tiada carton dalam range tu!'); return; }
+
+  closeModal('modal-print-range');
+  var slots = selected.map(function(c){ return cartonLabelFields(pl, c); });
+  var pages = '';
+  for (var i = 0; i < slots.length; i += 2) {
+    var L = slots[i], R = slots[i+1];
+    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText, L.refNo) + '<div class="cut-line"></div>' + (R ? buildLabelCol(R.fields, R.itemCount, R.qrText, R.refNo) : '<div style="flex:1"></div>') + '</div>';
+  }
+  document.getElementById('print-label-area').innerHTML = pages;
+  document.body.classList.add('printing-label');
+  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); });
+  if (isDateMode) {
+    toast('🖨️ Printing ' + selected.length + ' cartons (' + document.getElementById('print-date-val').value + ')');
+  } else {
+    toast('🖨️ Printing box ' + from + ' – ' + to + ' (' + selected.length + ' cartons)');
+  }
+}
+
 function printSelectedLabels(plId) {
   var pl = getPL(plId); if (!pl) return;
   var selected = Array.from(document.querySelectorAll('.ctn-chk:checked')).map(function(el){ return el.dataset.id; });
   if (selected.length === 0) { toast('⚠️ No cartons dipilih!'); return; }
   var cartons = pl.cartons.filter(function(c){ return selected.indexOf(c.id) !== -1; })
-    .sort(function(a,b){ return a.boxNo - b.boxNo; });
+    .sort(function(a,b){
+    var ad = localDate(a.ts), bd = localDate(b.ts);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
   var slots = cartons.map(function(c){ return cartonLabelFields(pl, c); });
   var pages = '';
   for (var i = 0; i < slots.length; i += 2) {
-    var L = slots[i], R = slots[i+1] || slots[i];
-    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText, L.refNo) + '<div class="cut-line"></div>' + buildLabelCol(R.fields, R.itemCount, R.qrText, R.refNo) + '</div>';
+    var L = slots[i], R = slots[i+1];
+    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText, L.refNo) + '<div class="cut-line"></div>' + (R ? buildLabelCol(R.fields, R.itemCount, R.qrText, R.refNo) : '<div style="flex:1"></div>') + '</div>';
   }
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
@@ -1427,46 +1590,27 @@ function openAddCarton(plId) {
   var cwEl=document.getElementById('ctn-weight'); if(cwEl) cwEl.value='';
   var cmEl=document.getElementById('ctn-measure'); if(cmEl) cmEl.value='72x46x31.5';
   clearItemRows('modal');
-  // Show form first with loading indicator
-  var refInput = document.getElementById('ctn-refno');
-  refInput.value = '...';
-  refInput.disabled = true;
+  document.getElementById('ctn-refno').value = '';
   openModal('modal-carton');
-  function _setRef(cartons) {
-    var maxRef = cartons.length > 0 ? Math.max.apply(null, cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0;
-    refInput.value = String(maxRef + 1);
-    refInput.disabled = false;
-  }
-  if (SB_URL && SB_KEY) {
-    fetch(SB_URL + '/rest/v1/packing_lists?id=eq.' + plId + '&select=data', { headers: sbHeaders() })
-      .then(function(r){ return r.json(); })
-      .then(function(rows) {
-        var remoteCtns = (rows[0] && rows[0].data && rows[0].data.cartons) || [];
-        // Merge local + remote cartons to get true max
-        var allIds = {};
-        var merged = [];
-        pl.cartons.concat(remoteCtns).forEach(function(c){ if(!allIds[c.id]){ allIds[c.id]=1; merged.push(c); } });
-        _setRef(merged);
-      })
-      .catch(function(){ _setRef(pl.cartons); });
-  } else {
-    _setRef(pl.cartons);
-  }
 }
 
 function saveCarton(doPrint) {
   const plId = v('ctn-pl-id');
   const pl = getPL(plId); if (!pl) return;
-  const refNo = (v('ctn-refno')||'').trim();
   const items = getItemRowsData('modal');
-  if (!items.length || !items[0].style) { toast('⚠️ Please select Item Description!'); return; }
+  if (!items.length || !items[0].style) { toast('\u26a0\ufe0f Please select Item Description!'); return; }
   const editId = v('ctn-edit-id');
-  if (refNo && !editId) {
-    var dupRef = pl.cartons.find(function(c){ return String(c.refNo||'') === String(refNo); });
-    if (dupRef) { toast('⚠️ Ref No ' + refNo + ' dah digunakan dalam PL ni!'); return; }
-  }
+
+  // Tutup modal SEBELUM proses — cegah double-save
+  closeModal('modal-carton');
+
+  // Untuk edit: ambil refNo dari hidden field (set oleh editCarton)
+  // Untuk new: guna local max+1 sebagai placeholder (akan diganti oleh RPC)
+  var refNo = editId
+    ? ((v('ctn-refno')||'').trim() || '0')
+    : String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
+
   const tPcs = items.reduce((s,it) => s + it.pcs, 0);
-  // Auto-assign boxNo: keep existing if edit, else max+1
   var autoBoxNo = editId
     ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
     : (pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1);
@@ -1474,17 +1618,59 @@ function saveCarton(doPrint) {
     id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
     totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
     ts: editId ? ((pl.cartons.find(function(x){ return x.id === editId; })||{}).ts || new Date().toISOString()) : new Date().toISOString(),
-    createdBy: currentUser ? currentUser.name : '—'
+    createdBy: currentUser ? currentUser.name : '\u2014'
   };
   if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
   else pl.cartons.push(carton);
   pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
   save();
-  closeModal('modal-carton');
   renderDash();
-  toast(`✅ Box ${String(autoBoxNo).padStart(3,'0')} saved!`);
-  if (doPrint) printCartonLabel(plId, carton.id);
   openCartonList(plId);
+  if (doPrint) printCartonLabel(plId, carton.id);
+
+  if (!editId && SB_URL && SB_KEY) {
+    var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+    var _rpcDone = false;
+    function _showPopup(num) {
+      if (_rpcDone) return;
+      _rpcDone = true;
+      _dirty = true;
+      setTimeout(function() {
+        document.getElementById('refno-confirm-num').textContent = num;
+        openModal('modal-refno-confirm');
+      }, 300);
+    }
+    // Timeout 6 saat — kalau phone network slow, popup tetap keluar
+    var _rpcTimeout = setTimeout(function() { _showPopup(refNo); }, 6000);
+    var _rpcAbort = new AbortController();
+    fetch(SB_URL + '/rest/v1/rpc/claim_ref_no_v3', {
+      method: 'POST', headers: rpcHeaders, signal: _rpcAbort.signal,
+      body: JSON.stringify({ p_pl_id: plId })
+    })
+      .then(function(r) {
+        if (!r.ok) { return r.text().then(function(t){ throw new Error(r.status + ': ' + t.slice(0,60)); }); }
+        return r.json();
+      })
+      .then(function(assignedRef) {
+        clearTimeout(_rpcTimeout);
+        if (assignedRef === null || assignedRef === undefined || isNaN(parseInt(assignedRef))) {
+          throw new Error('invalid: ' + JSON.stringify(assignedRef));
+        }
+        var finalRef = String(parseInt(assignedRef));
+        var idx = pl.cartons.findIndex(function(c) { return c.id === carton.id; });
+        if (idx !== -1) { pl.cartons[idx].refNo = finalRef; save(); }
+        _showPopup(finalRef);
+      })
+      .catch(function(e) {
+        clearTimeout(_rpcTimeout);
+        _showPopup(refNo);
+      });
+  } else {
+    setTimeout(function() {
+      document.getElementById('refno-confirm-num').textContent = refNo;
+      openModal('modal-refno-confirm');
+    }, 150);
+  }
 }
 
 
@@ -1669,7 +1855,7 @@ function cartonLabelFields(pl, c) {
   var total = pl.cartons.length;
   // Use same sort as PL export so label box number matches PL
   var sortedCtns = pl.cartons.slice().sort(function(a,b){
-    var ad = (a.ts||'').slice(0,10), bd = (b.ts||'').slice(0,10);
+    var ad = localDate(a.ts), bd = localDate(b.ts);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
 
@@ -1735,13 +1921,20 @@ function printCartonLabel(plId, ctnId) {
 function printAllLabels(plId) {
   var pl = getPL(plId);
   if (!pl || pl.cartons.length === 0) { toast('No cartons untuk diprint!'); return; }
-  var sorted = pl.cartons.slice().sort(function(a,b){ return (a.boxNo||0) - (b.boxNo||0); });
+  var sorted = pl.cartons.slice().sort(function(a,b){
+    var ad = localDate(a.ts), bd = localDate(b.ts);
+    if (ad !== bd) return ad.localeCompare(bd);
+    var ai = getCartonItems(a), bi = getCartonItems(b);
+    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
+    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
+    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
+  });
   var slots = sorted.map(function(c) { return cartonLabelFields(pl, c); });
   var pages = '';
   for (var i = 0; i < slots.length; i += 2) {
     var L = slots[i];
-    var R = slots[i+1] || slots[i];
-    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText, L.refNo) + '<div class="cut-line"></div>' + buildLabelCol(R.fields, R.itemCount, R.qrText, R.refNo) + '</div>';
+    var R = slots[i+1];
+    pages += '<div class="print-page-label">' + buildLabelCol(L.fields, L.itemCount, L.qrText, L.refNo) + '<div class="cut-line"></div>' + (R ? buildLabelCol(R.fields, R.itemCount, R.qrText, R.refNo) : '<div style="flex:1"></div>') + '</div>';
   }
   var area = document.getElementById('print-label-area');
   area.innerHTML = pages;
@@ -2020,7 +2213,7 @@ function buildPLDoc(pl) {
   });
 
   // Total row
-  var szTotalCells = SIZES.map(function(s){ return '<td style="'+TDB+'background:#d0e4f7">'+(sizeTotals[s]||'')+'</td>'; }).join('');
+  var szTotalCells = SIZES.map(function(s){ return '<td style="'+TDB+'background:#d0e4f7"></td>'; }).join('');
   rows += '<tr>'
     + '<td colspan="5" style="'+TDB+'text-align:right;background:#d0e4f7;font-size:.78rem">TOTAL / 总计</td>'
     + szTotalCells
@@ -2696,7 +2889,7 @@ window.onload = function() {
             remoteCartons.forEach(function(rc){
               if (localCartonIds.indexOf(rc.id) === -1) { mergedCartons.push(rc); }
             });
-            var merged = Object.assign({}, remote, { cartons: mergedCartons });
+            var merged = Object.assign({}, remote, pls[idx], { cartons: mergedCartons });
             if (JSON.stringify(pls[idx]) !== JSON.stringify(merged)) changed = true;
             pls[idx] = merged;
           } else {
@@ -2708,6 +2901,23 @@ window.onload = function() {
             localIds.push(newPl.id);
             changed = true;
           }
+        });
+        // Auto-fix duplicate refNos within each PL (safety net for race condition)
+        pls.forEach(function(pl) {
+          var seenRefs = {};
+          var maxRef = 0;
+          (pl.cartons||[]).forEach(function(c) {
+            var r = parseInt(c.refNo)||0; if (r > maxRef) maxRef = r;
+          });
+          (pl.cartons||[]).forEach(function(c) {
+            var r = c.refNo ? String(c.refNo) : '';
+            if (!r) return;
+            if (seenRefs[r]) {
+              maxRef++;
+              c.refNo = String(maxRef);
+              changed = true; // akan push fix ke Supabase
+            } else { seenRefs[r] = true; }
+          });
         });
         if (changed || hasLocalExtra) { localStorage.setItem('export_pls', JSON.stringify(pls)); }
         callback(changed, hasLocalExtra);
@@ -2769,7 +2979,7 @@ window.onload = function() {
       if (dy > 5) {
         var prog = Math.min(dy / THRESH, 1);
         ind.style.opacity = prog;
-        ind.style.transform = 'translateX(-50%) translateY(' + Math.min(dy * 0.4, 20) + 'px)';
+            ind.style.transform = 'translateX(-50%) translateY(' + Math.min(dy * 0.4, 20) + 'px)';
         ind.textContent = dy >= THRESH ? 'Lepas untuk refresh!' : 'Tarik untuk refresh...';
       }
     }, {passive:true});
@@ -2787,6 +2997,7 @@ window.onload = function() {
       }
     }, {passive:true});
   })();
+
 };
 </script>
 </body>
