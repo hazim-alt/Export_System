@@ -1489,7 +1489,7 @@ function saveCarton(doPrint) {
     // Retry up to 3x kalau fail (network issue sekejap)
     var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
     function _tryRPC(attemptsLeft) {
-      fetch(SB_URL + '/rest/v1/rpc/claim_ref_no_v2', {
+      fetch(SB_URL + '/rest/v1/rpc/claim_ref_no_v3', {
         method: 'POST', headers: rpcHeaders,
         body: JSON.stringify({ p_pl_id: plId })
       })
