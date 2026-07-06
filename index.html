@@ -1470,55 +1470,23 @@ function saveCarton(doPrint) {
   openCartonList(plId);
   if (doPrint) printCartonLabel(plId, carton.id);
 
-  function _showRefPopup(finalRef) {
+  if (!editId && SB_URL && SB_KEY) {
+    // Sync ke Supabase dulu — popup keluar SELEPAS sync + dedup selesai
+    // Cara ni pastikan ref no yang dipapar adalah final & unik
+    syncToSheets(function() {
+      var finalCarton = pl.cartons.find(function(c) { return c.id === carton.id; });
+      var finalRef = finalCarton ? (finalCarton.refNo || refNo) : refNo;
+      renderAll();
+      setTimeout(function() {
+        document.getElementById('refno-confirm-num').textContent = finalRef;
+        openModal('modal-refno-confirm');
+      }, 150);
+    });
+  } else {
     setTimeout(function() {
-      document.getElementById('refno-confirm-num').textContent = finalRef;
+      document.getElementById('refno-confirm-num').textContent = refNo;
       openModal('modal-refno-confirm');
     }, 150);
-    if (SB_URL && SB_KEY && !_isSyncing) { _dirty = false; syncToSheets(function() { renderAll(); }); }
-  }
-
-  function _rollbackCarton() {
-    pl.cartons = pl.cartons.filter(function(c) { return c.id !== carton.id; });
-    pl.cartons.sort(function(a,b){ return a.boxNo - b.boxNo; });
-    save(); renderDash(); openCartonList(plId);
-  }
-
-  if (!editId && SB_URL && SB_KEY) {
-    // RPC atomic: assign ref no unik dari Supabase
-    // Retry up to 3x kalau fail (network issue sekejap)
-    var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
-    function _tryRPC(attemptsLeft) {
-      fetch(SB_URL + '/rest/v1/rpc/claim_ref_no_v3', {
-        method: 'POST', headers: rpcHeaders,
-        body: JSON.stringify({ p_pl_id: plId })
-      })
-        .then(function(r) {
-          if (!r.ok) { return r.text().then(function(t){ throw new Error(r.status + ': ' + t.slice(0,60)); }); }
-          return r.json();
-        })
-        .then(function(assignedRef) {
-          if (assignedRef === null || assignedRef === undefined || isNaN(parseInt(assignedRef))) {
-            throw new Error('RPC returned invalid: ' + JSON.stringify(assignedRef));
-          }
-          var finalRef = String(parseInt(assignedRef));
-          var idx = pl.cartons.findIndex(function(c) { return c.id === carton.id; });
-          if (idx !== -1) { pl.cartons[idx].refNo = finalRef; save(); }
-          _showRefPopup(finalRef);
-        })
-        .catch(function(e) {
-          if (attemptsLeft > 1) {
-            setTimeout(function() { _tryRPC(attemptsLeft - 1); }, 1500);
-          } else {
-            toast('\u26a0\ufe0f Server tidak dapat dicapai. Ref No mungkin tidak unik — semak semula.');
-            _showRefPopup(refNo);
-          }
-        });
-    }
-    _tryRPC(3);
-  } else {
-    // Offline / no Supabase — guna local ref no
-    _showRefPopup(refNo);
   }
 }
 
