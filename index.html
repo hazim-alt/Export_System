@@ -1461,7 +1461,12 @@ function saveCarton(doPrint) {
   if (!items.length || !items[0].style) { toast('⚠️ Please select Item Description!'); return; }
   const editId = v('ctn-edit-id');
 
+  // Tutup modal & disable save buttons SEBELUM fetch — cegah double-save
+  closeModal('modal-carton');
+  var _saved = false; // guard: pastikan _doSave hanya jalan sekali
+
   function _doSave(refNo) {
+    if (_saved) return; _saved = true;
     const tPcs = items.reduce((s,it) => s + it.pcs, 0);
     var autoBoxNo = editId
       ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
@@ -1476,7 +1481,6 @@ function saveCarton(doPrint) {
     else pl.cartons.push(carton);
     pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
     save();
-    closeModal('modal-carton');
     renderDash();
     toast('✅ Box ' + String(autoBoxNo).padStart(3,'0') + ' (Ref ' + refNo + ') saved!');
     if (doPrint) printCartonLabel(plId, carton.id);
