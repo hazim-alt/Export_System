@@ -1325,7 +1325,7 @@ function renderPLList() {
           </div>
         </div>
         <div class="pl-card-actions">
-          <button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" onclick="openCartonList('${pl.id}')">📦 Cartons (${packed})</button>
+          <button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" onclick="openCartonList('${pl.id}')">📦 Cartons (${packed})</button><button class="btn" style="background:#25D366;color:#fff;border-color:#25D366;padding:6px 10px;font-size:.78rem" onclick="shareToWhatsApp('${pl.id}')">&#128242;</button>
           ${isCompleted ? '' : `<button class="btn btn-grey" style="padding:6px 12px;font-size:.78rem" onclick="editPL('${pl.id}')">✏️</button>`}
           ${isCompleted ? '' : `<button class="btn btn-red" style="padding:6px 12px;font-size:.78rem" onclick="deletePL('${pl.id}')">🗑️</button>`}
           ${isCompleted ? `<button class="btn btn-ghost" style="padding:6px 12px;font-size:.78rem" onclick="unlockPL('${pl.id}')">🔓 Unlock</button>` : ''}
@@ -1375,6 +1375,29 @@ function openCartonList(plId) {
     if (f.date && localDate(c.ts).indexOf(f.date) === -1) return false;
     return true;
   });
+
+  // Compute footer totals
+  var _ftTotalCTN = filtered.length;
+  var _ftTotalPCS = 0;
+  var _ftSizes = {};
+  SIZES.forEach(function(s){ _ftSizes[s] = 0; });
+  filtered.forEach(function(c){
+    var items = getCartonItems(c);
+    _ftTotalPCS += items.reduce(function(s,it){ return s+(it.pcs||0); }, 0);
+    items.forEach(function(it){
+      SIZES.forEach(function(s){ if (it.sizes && it.sizes[s]) _ftSizes[s] += it.sizes[s]; });
+    });
+  });
+  var _ftSizeCells = SIZES.map(function(s){ return '<td style="text-align:center;font-weight:700">' + (_ftSizes[s] || '') + '</td>'; }).join('');
+  var _footerRow = '<tfoot style="position:sticky;bottom:0;z-index:3">'
+    + '<tr style="background:var(--sidebar-bg);border-top:2px solid var(--blue)">'
+    + '<td style="text-align:center;font-size:.75rem;font-weight:800;padding:5px 4px;white-space:nowrap">TOTAL<br><span style="font-size:.85rem;color:var(--blue)">' + _ftTotalCTN + ' CTN</span></td>'
+    + '<td></td><td></td><td></td><td></td>'
+    + _ftSizeCells
+    + '<td style="text-align:center;font-weight:800;color:var(--blue)">' + _ftTotalPCS + '</td>'
+    + '<td></td><td></td><td></td>'
+    + '</tr>'
+    + '</tfoot>';
 
   var rows = '';
   if (filtered.length === 0) {
@@ -1443,10 +1466,11 @@ function openCartonList(plId) {
     + '<button class="btn btn-primary" onclick="printSelectedLabels(\'' + plId + '\')">&#128424;&#65039; Print Selected</button>'
     + '<button class="btn btn-grey" onclick="openPrintRange(\'' + plId + '\')">🖨️ Print Range</button>'
     + '<button class="btn btn-green" onclick="openAddCarton(\'' + plId + '\')">+ Add Carton</button>'
+    + '<button class="btn" style="background:#25D366;color:#fff;border-color:#25D366" onclick="shareToWhatsApp(\'' + plId + '\')">&#128242; Share</button>'
     + '</div></div>'
     + '<div class="card" style="padding:0;overflow:hidden">'
     + '<div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 210px)">'
-    + '<table class="tbl"><thead style="position:sticky;top:0;z-index:3">'
+    + '<table class="tbl" style="border-collapse:separate;border-spacing:0"><thead style="position:sticky;top:0;z-index:3">'
     + '<tr>'
     + '<th style="background:var(--card-bg)">Box No</th>'
     + '<th style="background:var(--card-bg)">Ref No</th>'
@@ -1460,7 +1484,7 @@ function openCartonList(plId) {
     + '<th style="background:var(--card-bg)">Create Date</th>'
     + '</tr>'
     + filterRow
-    + '</thead><tbody>' + rows + '</tbody></table></div></div>';
+    + '</thead><tbody>' + rows + '</tbody>' + _footerRow + '</table></div></div>';
 }
 var _testDayActive = false;
 function testDayToggle(plId) {
@@ -1580,6 +1604,35 @@ function printSelectedLabels(plId) {
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
   generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); });
+}
+
+function shareToWhatsApp(plId) {
+  var pl = getPL(plId); if (!pl) return;
+  var today = localDate(new Date().toISOString());
+  var todayCtns = (pl.cartons||[]).filter(function(c){ return localDate(c.ts) === today; });
+  var todayPcs = todayCtns.reduce(function(s,c){ return s+(c.totalPcs||0); }, 0);
+  var totalPcs = (pl.cartons||[]).reduce(function(s,c){ return s+(c.totalPcs||0); }, 0);
+  var totalCtns = pl.cartons.length;
+  var expected = pl.total || 0;
+  var pct = expected > 0 ? Math.round(totalCtns / expected * 100) : 0;
+  var now = new Date();
+  var hh = now.getHours(), mm = String(now.getMinutes()).padStart(2,'0');
+  var ampm = hh < 12 ? 'PG' : 'PTG';
+  var hh12 = hh % 12 || 12;
+  var dd = String(now.getDate()).padStart(2,'0');
+  var mo = String(now.getMonth()+1).padStart(2,'0');
+  var yyyy = now.getFullYear();
+  var timeStr = dd+'/'+mo+'/'+yyyy+', '+hh12+':'+mm+' '+ampm;
+  var userName = currentUser ? currentUser.name : '';
+  var msg = '*EXPORT PACKING UPDATE*\n'
+    + timeStr + (userName ? ' | ' + userName : '') + '\n'
+    + '\n'
+    + '*' + pl.name + '*\n'
+    + 'Dest: ' + (pl.dest||'-') + '\n'
+    + 'Today: ' + todayCtns.length + ' CTN | ' + todayPcs + ' PCS\n'
+    + 'Total done: ' + totalCtns + '/' + expected + ' CTN (' + pct + '%) | ' + totalPcs + ' PCS';
+  var url = 'https://wa.me/?text=' + encodeURIComponent(msg);
+  window.open(url, '_blank');
 }
 
 function openAddCarton(plId) {
