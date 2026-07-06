@@ -1509,8 +1509,10 @@ function saveCarton(doPrint) {
 
   if (!editId && SB_URL && SB_KEY) {
     // Guna Supabase RPC untuk assign ref no secara atomic — 100% unique, tiada race condition
+    // Note: guna headers tanpa 'Prefer:return=minimal' supaya RPC return value
+    var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
     fetch(SB_URL + '/rest/v1/rpc/claim_ref_no', {
-      method: 'POST', headers: sbHeaders(),
+      method: 'POST', headers: rpcHeaders,
       body: JSON.stringify({ p_pl_id: plId })
     })
       .then(function(r) { return r.json(); })
