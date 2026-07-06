@@ -378,6 +378,16 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
   </div>
 </div>
 
+<!-- ════ REF NO CONFIRM ════ -->
+<div class="modal-overlay" id="modal-refno-confirm">
+  <div class="modal" style="max-width:320px;text-align:center;padding:32px 24px 28px">
+    <div style="font-size:.85rem;color:var(--text-muted);font-weight:700;letter-spacing:.08em;margin-bottom:8px">REF NO. CARTON</div>
+    <div id="refno-confirm-num" style="font-size:5rem;font-weight:900;color:var(--blue);line-height:1;margin:8px 0 16px"></div>
+    <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:24px">Tulis nombor ini pada carton sebelum tekan OK</div>
+    <button class="btn btn-primary btn-lg" style="width:100%;font-size:1rem" onclick="closeModal('modal-refno-confirm')">Confirm</button>
+  </div>
+</div>
+
 <!-- ════ SUPABASE SETUP ════ -->
 <div class="modal-overlay" id="modal-sheet-setup">
   <div class="modal-box" style="max-width:480px">
@@ -1482,7 +1492,9 @@ function saveCarton(doPrint) {
     pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
     save();
     renderDash();
-    toast('✅ Box ' + String(autoBoxNo).padStart(3,'0') + ' (Ref ' + refNo + ') saved!');
+    // Tunjuk popup ref no — staff kena tulis sebelum tekan OK
+    document.getElementById('refno-confirm-num').textContent = refNo;
+    openModal('modal-refno-confirm');
     if (doPrint) printCartonLabel(plId, carton.id);
     openCartonList(plId);
     // Push to Supabase immediately — jangan tunggu autoSync 3 saat
