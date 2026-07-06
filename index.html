@@ -1499,9 +1499,12 @@ function saveCarton(doPrint) {
   openCartonList(plId);
   if (doPrint) printCartonLabel(plId, carton.id);
 
-  // Tunjuk popup terus — staff nampak ref no segera
-  document.getElementById('refno-confirm-num').textContent = refNo;
-  openModal('modal-refno-confirm');
+  // Delay 300ms — bagi touch event dari Save button settle dulu (cegah modal terus tutup kat mobile)
+  var _refNoForPopup = refNo;
+  setTimeout(function() {
+    document.getElementById('refno-confirm-num').textContent = _refNoForPopup;
+    openModal('modal-refno-confirm');
+  }, 300);
 
   // Push Supabase dalam background (tak kacau popup)
   if (SB_URL && SB_KEY && !_isSyncing) {
