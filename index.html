@@ -1472,8 +1472,21 @@ function saveCarton(doPrint) {
 
   if (!editId && SB_URL && SB_KEY) {
     var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+    var _rpcDone = false;
+    function _showPopup(num) {
+      if (_rpcDone) return;
+      _rpcDone = true;
+      _dirty = true;
+      setTimeout(function() {
+        document.getElementById('refno-confirm-num').textContent = num;
+        openModal('modal-refno-confirm');
+      }, 300);
+    }
+    // Timeout 6 saat — kalau phone network slow, popup tetap keluar
+    var _rpcTimeout = setTimeout(function() { _showPopup(refNo); }, 6000);
+    var _rpcAbort = new AbortController();
     fetch(SB_URL + '/rest/v1/rpc/claim_ref_no_v3', {
-      method: 'POST', headers: rpcHeaders,
+      method: 'POST', headers: rpcHeaders, signal: _rpcAbort.signal,
       body: JSON.stringify({ p_pl_id: plId })
     })
       .then(function(r) {
@@ -1481,25 +1494,18 @@ function saveCarton(doPrint) {
         return r.json();
       })
       .then(function(assignedRef) {
+        clearTimeout(_rpcTimeout);
         if (assignedRef === null || assignedRef === undefined || isNaN(parseInt(assignedRef))) {
           throw new Error('invalid: ' + JSON.stringify(assignedRef));
         }
         var finalRef = String(parseInt(assignedRef));
         var idx = pl.cartons.findIndex(function(c) { return c.id === carton.id; });
         if (idx !== -1) { pl.cartons[idx].refNo = finalRef; save(); }
-        _dirty = true;
-        setTimeout(function() {
-          document.getElementById('refno-confirm-num').textContent = finalRef;
-          openModal('modal-refno-confirm');
-        }, 300);
+        _showPopup(finalRef);
       })
       .catch(function(e) {
-        // RPC fail — simpan carton, sync pada next tick, popup terus
-        _dirty = true;
-        setTimeout(function() {
-          document.getElementById('refno-confirm-num').textContent = refNo;
-          openModal('modal-refno-confirm');
-        }, 300);
+        clearTimeout(_rpcTimeout);
+        _showPopup(refNo);
       });
   } else {
     setTimeout(function() {
