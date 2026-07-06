@@ -1474,10 +1474,12 @@ function saveCarton(doPrint) {
   // Tutup modal SEBELUM proses — cegah double-save
   closeModal('modal-carton');
 
-  // Compute ref no dari local (mergeFromSheets auto-fix handle race condition)
-  var refNo = editId
-    ? (v('ctn-refno')||'').trim()
-    : String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
+  // Guna nilai ref no dari form (openAddCarton dah pull Supabase untuk dapat nilai betul)
+  // Fallback ke local max jika form value tak ada / masih loading
+  var refNo = (v('ctn-refno')||'').trim();
+  if (!refNo || refNo === '...' || isNaN(parseInt(refNo))) {
+    refNo = String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
+  }
 
   const tPcs = items.reduce((s,it) => s + it.pcs, 0);
   var autoBoxNo = editId
