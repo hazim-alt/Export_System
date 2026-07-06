@@ -383,7 +383,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
   <div class="modal" style="max-width:320px;text-align:center;padding:32px 24px 28px">
     <div style="font-size:.85rem;color:var(--text-muted);font-weight:700;letter-spacing:.08em;margin-bottom:8px">REF NO. CARTON</div>
     <div id="refno-confirm-num" style="font-size:5rem;font-weight:900;color:var(--blue);line-height:1;margin:8px 0 16px"></div>
-    <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:24px">Tulis nombor ini pada carton sebelum tekan OK</div>
+
     <button class="btn btn-primary btn-lg" style="width:100%;font-size:1rem" onclick="closeModal('modal-refno-confirm')">Confirm</button>
   </div>
 </div>
@@ -1468,64 +1468,43 @@ function saveCarton(doPrint) {
   const plId = v('ctn-pl-id');
   const pl = getPL(plId); if (!pl) return;
   const items = getItemRowsData('modal');
-  if (!items.length || !items[0].style) { toast('⚠️ Please select Item Description!'); return; }
+  if (!items.length || !items[0].style) { toast('\u26a0\ufe0f Please select Item Description!'); return; }
   const editId = v('ctn-edit-id');
 
-  // Tutup modal & disable save buttons SEBELUM fetch — cegah double-save
+  // Tutup modal SEBELUM proses — cegah double-save
   closeModal('modal-carton');
-  var _saved = false; // guard: pastikan _doSave hanya jalan sekali
 
-  function _doSave(refNo) {
-    if (_saved) return; _saved = true;
-    const tPcs = items.reduce((s,it) => s + it.pcs, 0);
-    var autoBoxNo = editId
-      ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
-      : (pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1);
-    const carton = {
-      id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
-      totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
-      ts: editId ? ((pl.cartons.find(function(x){ return x.id === editId; })||{}).ts || new Date().toISOString()) : new Date().toISOString(),
-      createdBy: currentUser ? currentUser.name : '—'
-    };
-    if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
-    else pl.cartons.push(carton);
-    pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
-    save();
-    renderDash();
-    // Tunjuk popup ref no — staff kena tulis sebelum tekan OK
-    document.getElementById('refno-confirm-num').textContent = refNo;
-    openModal('modal-refno-confirm');
-    if (doPrint) printCartonLabel(plId, carton.id);
-    openCartonList(plId);
-    // Push to Supabase immediately — jangan tunggu autoSync 3 saat
-    if (SB_URL && SB_KEY && !_isSyncing) {
-      _dirty = false;
-      syncToSheets(function() { renderAll(); });
-    }
-  }
+  // Compute ref no dari local (mergeFromSheets auto-fix handle race condition)
+  var refNo = editId
+    ? (v('ctn-refno')||'').trim()
+    : String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
 
-  if (!editId && SB_URL && SB_KEY) {
-    // Re-fetch Supabase at save time to get true max refNo — prevents race condition
-    fetch(SB_URL + '/rest/v1/packing_lists?id=eq.' + plId + '&select=data', { headers: sbHeaders() })
-      .then(function(r){ return r.json(); })
-      .then(function(rows) {
-        var remoteCtns = (rows[0] && rows[0].data && rows[0].data.cartons) || [];
-        var allIds = {};
-        var merged = [];
-        pl.cartons.concat(remoteCtns).forEach(function(c){ if(!allIds[c.id]){ allIds[c.id]=1; merged.push(c); } });
-        merged = merged.filter(function(c){ return deletedCartonIds.indexOf(c.id) === -1; });
-        var maxRef = merged.length > 0 ? Math.max.apply(null, merged.map(function(c){ return parseInt(c.refNo)||0; })) : 0;
-        _doSave(String(maxRef + 1));
-      })
-      .catch(function(){
-        var maxRef = pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0;
-        _doSave(String(maxRef + 1));
-      });
-  } else {
-    var refNo = editId
-      ? (v('ctn-refno')||''). trim()
-      : String((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(c){ return parseInt(c.refNo)||0; })) : 0) + 1);
-    _doSave(refNo);
+  const tPcs = items.reduce((s,it) => s + it.pcs, 0);
+  var autoBoxNo = editId
+    ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
+    : (pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1);
+  const carton = {
+    id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
+    totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
+    ts: editId ? ((pl.cartons.find(function(x){ return x.id === editId; })||{}).ts || new Date().toISOString()) : new Date().toISOString(),
+    createdBy: currentUser ? currentUser.name : '\u2014'
+  };
+  if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
+  else pl.cartons.push(carton);
+  pl.cartons.sort((a,b) => a.boxNo - b.boxNo);
+  save();
+  renderDash();
+  openCartonList(plId);
+  if (doPrint) printCartonLabel(plId, carton.id);
+
+  // Popup ref no — tunjuk terus, tak tunggu Supabase
+  document.getElementById('refno-confirm-num').textContent = refNo;
+  openModal('modal-refno-confirm');
+
+  // Push ke Supabase dalam background
+  if (SB_URL && SB_KEY && !_isSyncing) {
+    _dirty = false;
+    syncToSheets(function() { renderAll(); });
   }
 }
 
