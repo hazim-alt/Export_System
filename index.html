@@ -1499,17 +1499,26 @@ function saveCarton(doPrint) {
   openCartonList(plId);
   if (doPrint) printCartonLabel(plId, carton.id);
 
-  // Delay 300ms — bagi touch event dari Save button settle dulu (cegah modal terus tutup kat mobile)
-  var _refNoForPopup = refNo;
-  setTimeout(function() {
-    document.getElementById('refno-confirm-num').textContent = _refNoForPopup;
-    openModal('modal-refno-confirm');
-  }, 300);
+  // Push PL ke Supabase DULU (1 request, ~200ms) — pastikan device lain nampak carton baru
+  // Baru tunjuk popup — so phone yang buka form lepas ni dapat ref no betul
+  function _showRefPopup() {
+    setTimeout(function() {
+      document.getElementById('refno-confirm-num').textContent = refNo;
+      openModal('modal-refno-confirm');
+    }, 150); // 150ms delay untuk touch event settle
+  }
 
-  // Push Supabase dalam background (tak kacau popup)
-  if (SB_URL && SB_KEY && !_isSyncing) {
-    _dirty = false;
-    syncToSheets(function() { renderAll(); });
+  if (SB_URL && SB_KEY) {
+    var plPayload = [{ id: pl.id, name: pl.name || '', status: pl.status || 'active',
+      total_boxes: pl.total || 0, carton_count: (pl.cartons || []).length,
+      data: pl, updated_at: new Date().toISOString() }];
+    fetch(SB_URL + '/rest/v1/packing_lists', { method: 'POST', headers: sbHeaders(), body: JSON.stringify(plPayload) })
+      .then(function() { _showRefPopup(); })
+      .catch(function() { _showRefPopup(); });
+    // Sync carton rows dalam background (tak perlu tunggu untuk popup)
+    if (!_isSyncing) { _dirty = false; syncToSheets(function() { renderAll(); }); }
+  } else {
+    _showRefPopup();
   }
 }
 
