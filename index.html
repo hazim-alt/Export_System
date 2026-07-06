@@ -1631,8 +1631,19 @@ function shareToWhatsApp(plId) {
     + 'Dest: ' + (pl.dest||'-') + '\n'
     + 'Today: ' + todayCtns.length + ' CTN | ' + todayPcs + ' PCS\n'
     + 'Total done: ' + totalCtns + '/' + expected + ' CTN (' + pct + '%) | ' + totalPcs + ' PCS';
-  var url = 'https://wa.me/?text=' + encodeURIComponent(msg);
-  window.open(url, '_blank');
+  var encoded = encodeURIComponent(msg);
+  // On mobile, use whatsapp:// scheme to open app directly; fallback to wa.me for desktop/browser
+  var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  var url = isMobile
+    ? 'whatsapp://send?text=' + encoded
+    : 'https://wa.me/?text=' + encoded;
+  // Use anchor click — more reliable than window.open on mobile browsers
+  var a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener noreferrer';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ document.body.removeChild(a); }, 500);
 }
 
 function openAddCarton(plId) {
