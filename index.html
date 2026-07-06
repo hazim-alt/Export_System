@@ -1494,10 +1494,13 @@ function saveCarton(doPrint) {
         }, 150);
       })
       .catch(function(e) {
-        pl.cartons = pl.cartons.filter(function(c) { return c.id !== carton.id; });
-        pl.cartons.sort(function(a,b){ return a.boxNo - b.boxNo; });
-        save(); renderDash(); openCartonList(plId);
-        toast('\u26a0\ufe0f Gagal sambung server. Cuba lagi.');
+        // RPC fail — tetap simpan carton, tunjuk ref no tempatan
+        // Auto-fix dedup akan handle selepas sync
+        if (!_isSyncing) syncToSheets(function() { renderAll(); });
+        setTimeout(function() {
+          document.getElementById('refno-confirm-num').textContent = refNo;
+          openModal('modal-refno-confirm');
+        }, 150);
       });
   } else {
     setTimeout(function() {
