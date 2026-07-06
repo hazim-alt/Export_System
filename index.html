@@ -1471,17 +1471,34 @@ function saveCarton(doPrint) {
   if (doPrint) printCartonLabel(plId, carton.id);
 
   if (!editId && SB_URL && SB_KEY) {
-    // Sync ke Supabase dulu — popup keluar SELEPAS sync + dedup selesai
-    // Cara ni pastikan ref no yang dipapar adalah final & unik
-    syncToSheets(function() {
-      var finalCarton = pl.cartons.find(function(c) { return c.id === carton.id; });
-      var finalRef = finalCarton ? (finalCarton.refNo || refNo) : refNo;
-      renderAll();
-      setTimeout(function() {
-        document.getElementById('refno-confirm-num').textContent = finalRef;
-        openModal('modal-refno-confirm');
-      }, 150);
-    });
+    var rpcHeaders = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+    fetch(SB_URL + '/rest/v1/rpc/claim_ref_no_v3', {
+      method: 'POST', headers: rpcHeaders,
+      body: JSON.stringify({ p_pl_id: plId })
+    })
+      .then(function(r) {
+        if (!r.ok) { return r.text().then(function(t){ throw new Error(r.status + ': ' + t.slice(0,60)); }); }
+        return r.json();
+      })
+      .then(function(assignedRef) {
+        if (assignedRef === null || assignedRef === undefined || isNaN(parseInt(assignedRef))) {
+          throw new Error('invalid: ' + JSON.stringify(assignedRef));
+        }
+        var finalRef = String(parseInt(assignedRef));
+        var idx = pl.cartons.findIndex(function(c) { return c.id === carton.id; });
+        if (idx !== -1) { pl.cartons[idx].refNo = finalRef; save(); }
+        if (!_isSyncing) syncToSheets(function() { renderAll(); });
+        setTimeout(function() {
+          document.getElementById('refno-confirm-num').textContent = finalRef;
+          openModal('modal-refno-confirm');
+        }, 150);
+      })
+      .catch(function(e) {
+        pl.cartons = pl.cartons.filter(function(c) { return c.id !== carton.id; });
+        pl.cartons.sort(function(a,b){ return a.boxNo - b.boxNo; });
+        save(); renderDash(); openCartonList(plId);
+        toast('\u26a0\ufe0f Gagal sambung server. Cuba lagi.');
+      });
   } else {
     setTimeout(function() {
       document.getElementById('refno-confirm-num').textContent = refNo;
