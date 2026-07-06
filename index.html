@@ -1515,16 +1515,21 @@ function saveCarton(doPrint) {
       method: 'POST', headers: rpcHeaders,
       body: JSON.stringify({ p_pl_id: plId })
     })
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (!r.ok) { return r.text().then(function(t){ throw new Error(r.status + ': ' + t.slice(0,60)); }); }
+        return r.json();
+      })
       .then(function(nextRef) {
-        var finalRef = String(nextRef);
-        // Update ref no carton yang baru disimpan
+        if (nextRef === null || nextRef === undefined || isNaN(parseInt(nextRef))) {
+          throw new Error('RPC returned invalid: ' + JSON.stringify(nextRef));
+        }
+        var finalRef = String(parseInt(nextRef));
         var idx = pl.cartons.findIndex(function(c) { return c.id === carton.id; });
         if (idx !== -1) { pl.cartons[idx].refNo = finalRef; save(); }
         _showRefPopup(finalRef);
       })
-      .catch(function() {
-        // Fallback: guna local max jika RPC gagal
+      .catch(function(e) {
+        toast('⚠️ RPC: ' + (e && e.message ? e.message : String(e)));
         _showRefPopup(refNo);
       });
   } else {
