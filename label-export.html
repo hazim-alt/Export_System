@@ -1598,7 +1598,7 @@ function executePrintRange() {
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
   var _rangeIds = selected.map(function(c){ return c.id; });
-  generateQRCodes(function(){ _afterPrintConfirm(pl, _rangeIds); window.print(); document.body.classList.remove('printing-label'); });
+  generateQRCodes(function(){ _doPrint(pl, _rangeIds); });
   if (isDateMode) {
     toast('🖨️ Printing ' + selected.length + ' cartons (' + document.getElementById('print-date-val').value + ')');
   } else {
@@ -1628,7 +1628,7 @@ function printSelectedLabels(plId) {
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
   var _printedIds = selected.slice();
-  generateQRCodes(function(){ _afterPrintConfirm(pl, _printedIds); window.print(); document.body.classList.remove('printing-label'); });
+  generateQRCodes(function(){ _doPrint(pl, _printedIds); });
 }
 
 function markPrinted(pl, ctnIds) {
@@ -1647,6 +1647,20 @@ function unmarkPrinted(plId, ctnId) {
   if (c) { c.printed = false; delete c.printedAt; }
   save(); openCartonList(plId);
 }
+function _doPrint(pl, ids) {
+  // Use afterprint event so popup only shows AFTER print dialog fully closes
+  var _done = false;
+  function _finish() {
+    if (_done) return; _done = true;
+    window.removeEventListener('afterprint', _finish);
+    document.body.classList.remove('printing-label');
+    _afterPrintConfirm(pl, ids);
+  }
+  window.addEventListener('afterprint', _finish);
+  window.print();
+  setTimeout(_finish, 60000); // safety fallback
+}
+
 function _afterPrintConfirm(pl, ctnIds) {
   var _bar = document.getElementById('_print-confirm-bar');
   if (_bar) _bar.remove();
@@ -2041,7 +2055,7 @@ function printCartonLabel(plId, ctnId) {
   var area = document.getElementById('print-label-area');
   area.innerHTML = '<div class="print-page-label">' + col + '<div class="cut-line"></div><div style="flex:1"></div>' + '</div>';
   document.body.classList.add('printing-label');
-  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); _afterPrintConfirm(pl, [ctnId]); });
+  generateQRCodes(function(){ _doPrint(pl, [ctnId]); });
 }
 
 function printAllLabels(plId) {
@@ -2066,7 +2080,7 @@ function printAllLabels(plId) {
   area.innerHTML = pages;
   document.body.classList.add('printing-label');
   var _allIds = sorted.map(function(c){ return c.id; });
-  generateQRCodes(function(){ _afterPrintConfirm(pl, _allIds); window.print(); document.body.classList.remove('printing-label'); });
+  generateQRCodes(function(){ _doPrint(pl, _allIds); });
 }
 
 // ══ DASHBOARD ══
