@@ -1953,20 +1953,26 @@ function fieldFontSize(text) {
 }
 
 function buildLabelCol(fields, itemCount, qrText, refNo) {
-  var fieldDivs = fields.map(function(f){
+  // fields[0..6] = top content, fields[7] = ctnStr, fields[8] = boxStr
+  var topFields = fields.slice(0, 7);
+  var ctnStr = fields[7] || '';
+  var boxStr = fields[8] || '';
+
+  var topDivs = topFields.map(function(f){
     var fs = fieldFontSize(f);
     var ws = (f || '').length > 14 ? 'normal' : 'nowrap';
     return '<div class="label-field" style="font-size:' + fs + ';white-space:' + ws + '">' + f + '</div>';
   }).join('');
-  // QR is absolute-positioned so excluded from flex children
+
   var refTag = refNo
     ? '<div style="display:flex;flex-direction:column;justify-content:center;padding-left:6px;border-left:2px solid #ccc;margin-left:6px;">'
       + '<div style="font-size:8pt;font-family:Arial,sans-serif;color:#555;font-weight:600;white-space:nowrap;">Ref No.</div>'
       + '<div style="font-size:20pt;font-family:Arial,sans-serif;font-weight:900;color:#000;white-space:nowrap;">' + refNo + '</div>'
       + '</div>'
     : '';
-  var qrDiv = qrText
-    ? '<div class="label-qr-wrap" style="position:absolute;bottom:6mm;left:50%;transform:translateX(-50%);display:flex;flex-direction:row;align-items:flex-start;">'
+
+  var qrBlock = qrText
+    ? '<div style="display:flex;flex-direction:row;align-items:flex-start;flex-shrink:0;">'
       + '<div style="text-align:center;">'
       + '<div class="label-qr" data-qr-text="' + qrText + '"></div>'
       + '<div style="font-size:6.5pt;font-family:Arial,sans-serif;font-weight:700;color:#000;margin-top:3px;line-height:1.3;white-space:pre;text-align:center;">' + qrText.replace(/ \| /g, '\n') + '</div>'
@@ -1974,7 +1980,17 @@ function buildLabelCol(fields, itemCount, qrText, refNo) {
       + refTag
       + '</div>'
     : '';
-  return '<div class="label-col">' + fieldDivs + qrDiv + '</div>';
+
+  // Bottom section: ctnStr + boxStr on left, QR block on right — in one flex row, never overlap
+  var bottomSection = '<div style="display:flex;flex-direction:row;align-items:flex-end;justify-content:space-between;padding-right:6mm;gap:4mm;">'
+    + '<div style="display:flex;flex-direction:column;gap:6mm;">'
+    + '<div class="label-field" style="font-size:' + fieldFontSize(ctnStr) + ';white-space:nowrap;">' + ctnStr + '</div>'
+    + '<div class="label-field" style="font-size:' + fieldFontSize(boxStr) + ';white-space:nowrap;">' + boxStr + '</div>'
+    + '</div>'
+    + qrBlock
+    + '</div>';
+
+  return '<div class="label-col">' + topDivs + bottomSection + '</div>';
 }
 
 function generateQRCodes(callback) {
