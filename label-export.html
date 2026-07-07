@@ -1369,6 +1369,17 @@ function openCartonList(plId) {
   var _maxIdx = Math.max.apply(null, pl.cartons.map(function(c){ return c._dispIdx||0; }).concat([0]));
   var _anyNew = false;
   _tempSorted.forEach(function(c) { if (!c._dispIdx) { c._dispIdx = ++_maxIdx; _anyNew = true; } });
+
+  // Normalize: if minimum _dispIdx > 1, offset all down so it starts from 1
+  var _assignedCtns = pl.cartons.filter(function(c){ return c._dispIdx; });
+  if (_assignedCtns.length > 0) {
+    var _minIdx = Math.min.apply(null, _assignedCtns.map(function(c){ return c._dispIdx; }));
+    if (_minIdx > 1) {
+      pl.cartons.forEach(function(c){ if (c._dispIdx) c._dispIdx -= (_minIdx - 1); });
+      _anyNew = true;
+    }
+  }
+
   if (_anyNew) save();
 
   // Sort display by _dispIdx — stable, never changes after edit
