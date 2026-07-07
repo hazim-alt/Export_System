@@ -1632,12 +1632,14 @@ function printSelectedLabels(plId) {
 }
 
 function markPrinted(pl, ctnIds) {
+  var currentPl = getPL(pl.id); // always use fresh reference — pl closure may be stale after autoSync
+  if (!currentPl) return;
   ctnIds.forEach(function(id){
-    var c = pl.cartons.find(function(x){ return x.id === id; });
+    var c = currentPl.cartons.find(function(x){ return x.id === id; });
     if (c) { c.printed = true; c.printedAt = new Date().toISOString(); }
   });
   save();
-  if (_cartonViewPlId === pl.id) openCartonList(pl.id);
+  if (_cartonViewPlId === currentPl.id) openCartonList(currentPl.id);
 }
 function unmarkPrinted(plId, ctnId) {
   var pl = getPL(plId); if (!pl) return;
