@@ -221,6 +221,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
 }
 @media print{body.printing-label{size:A4 landscape}}
 @media print{body.printing-pl{size:A4 portrait}}
+@media print{#_print-confirm-bar{display:none!important}}
 .print-label-area,.print-pl-area{display:none}
 .print-page-label{display:grid;grid-template-columns:1fr 4px 1fr;width:100%;page-break-after:always;height:210mm;overflow:hidden}
 .print-page-label:last-child{page-break-after:avoid}
@@ -1993,19 +1994,10 @@ function generateQRCodes(callback) {
 
 function cartonLabelFields(pl, c) {
   var items = getCartonItems(c);
-  var total = pl.cartons.length;
-  // Use same sort as PL export so label box number matches PL
-  var sortedCtns = pl.cartons.slice().sort(function(a,b){
-    var ad = localDate(a.ts), bd = localDate(b.ts);
-    if (ad !== bd) return ad.localeCompare(bd);
-    var ai = getCartonItems(a), bi = getCartonItems(b);
-
-    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
-    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
-  });
-  var displayIdx = sortedCtns.findIndex(function(x){ return x.id === c.id; });
-  var displayNo = displayIdx >= 0 ? displayIdx + 1 : c.boxNo;
+  // Numerator: use _dispIdx (permanent, stable across edits)
+  var displayNo = c._dispIdx || c.boxNo || 0;
+  // Denominator: use pl.total (Total Carton Expected from PL settings), fallback to actual count
+  var total = pl.total || pl.cartons.length;
   var ctnStr = String(displayNo).padStart(3,'0') + '/' + String(total).padStart(3,'0');
   var boxStr = String(displayNo).padStart(3,'0');
   var styles = [];
