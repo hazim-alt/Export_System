@@ -1585,7 +1585,7 @@ function executePrintRange() {
     from = parseInt(document.getElementById('print-range-from').value) || 1;
     to = parseInt(document.getElementById('print-range-to').value) || from;
     if (from < 1 || to < from) { toast('⚠️ Invalid range!'); return; }
-    selected = pl.cartons.slice().sort(SORT_FN).slice(from - 1, to);
+    selected = pl.cartons.filter(function(c){ return (c._dispIdx||0) >= from && (c._dispIdx||0) <= to; }).sort(function(a,b){ return (a._dispIdx||0) - (b._dispIdx||0); });
   }
   if (selected.length === 0) { toast('⚠️ No cartons in that range!'); return; }
 
