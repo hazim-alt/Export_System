@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ms">
 <head>
@@ -221,6 +222,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
 }
 @media print{body.printing-label{size:A4 landscape}}
 @media print{body.printing-pl{size:A4 portrait}}
+@media print{#_print-confirm-bar{display:none!important}}
 .print-label-area,.print-pl-area{display:none}
 .print-page-label{display:grid;grid-template-columns:1fr 4px 1fr;width:100%;page-break-after:always;height:210mm;overflow:hidden}
 .print-page-label:last-child{page-break-after:avoid}
@@ -1366,6 +1368,17 @@ function openCartonList(plId) {
   var _maxIdx = Math.max.apply(null, pl.cartons.map(function(c){ return c._dispIdx||0; }).concat([0]));
   var _anyNew = false;
   _tempSorted.forEach(function(c) { if (!c._dispIdx) { c._dispIdx = ++_maxIdx; _anyNew = true; } });
+
+  // Normalize: if minimum _dispIdx > 1, offset all down so it starts from 1
+  var _assignedCtns = pl.cartons.filter(function(c){ return c._dispIdx; });
+  if (_assignedCtns.length > 0) {
+    var _minIdx = Math.min.apply(null, _assignedCtns.map(function(c){ return c._dispIdx; }));
+    if (_minIdx > 1) {
+      pl.cartons.forEach(function(c){ if (c._dispIdx) c._dispIdx -= (_minIdx - 1); });
+      _anyNew = true;
+    }
+  }
+
   if (_anyNew) save();
 
   // Sort display by _dispIdx — stable, never changes after edit
@@ -1573,7 +1586,7 @@ function executePrintRange() {
     from = parseInt(document.getElementById('print-range-from').value) || 1;
     to = parseInt(document.getElementById('print-range-to').value) || from;
     if (from < 1 || to < from) { toast('⚠️ Invalid range!'); return; }
-    selected = pl.cartons.slice().sort(SORT_FN).slice(from - 1, to);
+    selected = pl.cartons.filter(function(c){ return (c._dispIdx||0) >= from && (c._dispIdx||0) <= to; }).sort(function(a,b){ return (a._dispIdx||0) - (b._dispIdx||0); });
   }
   if (selected.length === 0) { toast('⚠️ No cartons in that range!'); return; }
 
@@ -1587,7 +1600,7 @@ function executePrintRange() {
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
   var _rangeIds = selected.map(function(c){ return c.id; });
-  generateQRCodes(function(){ _afterPrintConfirm(pl, _rangeIds); window.print(); document.body.classList.remove('printing-label'); });
+  generateQRCodes(function(){ _doPrint(pl, _rangeIds); });
   if (isDateMode) {
     toast('🖨️ Printing ' + selected.length + ' cartons (' + document.getElementById('print-date-val').value + ')');
   } else {
@@ -1617,16 +1630,18 @@ function printSelectedLabels(plId) {
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
   var _printedIds = selected.slice();
-  generateQRCodes(function(){ _afterPrintConfirm(pl, _printedIds); window.print(); document.body.classList.remove('printing-label'); });
+  generateQRCodes(function(){ _doPrint(pl, _printedIds); });
 }
 
 function markPrinted(pl, ctnIds) {
+  var currentPl = getPL(pl.id); // always use fresh reference — pl closure may be stale after autoSync
+  if (!currentPl) return;
   ctnIds.forEach(function(id){
-    var c = pl.cartons.find(function(x){ return x.id === id; });
+    var c = currentPl.cartons.find(function(x){ return x.id === id; });
     if (c) { c.printed = true; c.printedAt = new Date().toISOString(); }
   });
   save();
-  if (_cartonViewPlId === pl.id) openCartonList(pl.id);
+  if (_cartonViewPlId === currentPl.id) openCartonList(currentPl.id);
 }
 function unmarkPrinted(plId, ctnId) {
   var pl = getPL(plId); if (!pl) return;
@@ -1634,6 +1649,20 @@ function unmarkPrinted(plId, ctnId) {
   if (c) { c.printed = false; delete c.printedAt; }
   save(); openCartonList(plId);
 }
+function _doPrint(pl, ids) {
+  // Use afterprint event so popup only shows AFTER print dialog fully closes
+  var _done = false;
+  function _finish() {
+    if (_done) return; _done = true;
+    window.removeEventListener('afterprint', _finish);
+    document.body.classList.remove('printing-label');
+    _afterPrintConfirm(pl, ids);
+  }
+  window.addEventListener('afterprint', _finish);
+  window.print();
+  setTimeout(_finish, 60000); // safety fallback
+}
+
 function _afterPrintConfirm(pl, ctnIds) {
   var _bar = document.getElementById('_print-confirm-bar');
   if (_bar) _bar.remove();
@@ -1925,20 +1954,26 @@ function fieldFontSize(text) {
 }
 
 function buildLabelCol(fields, itemCount, qrText, refNo) {
-  var fieldDivs = fields.map(function(f){
+  // fields[0..6] = top content, fields[7] = ctnStr, fields[8] = boxStr
+  var topFields = fields.slice(0, 7);
+  var ctnStr = fields[7] || '';
+  var boxStr = fields[8] || '';
+
+  var topDivs = topFields.map(function(f){
     var fs = fieldFontSize(f);
     var ws = (f || '').length > 14 ? 'normal' : 'nowrap';
     return '<div class="label-field" style="font-size:' + fs + ';white-space:' + ws + '">' + f + '</div>';
   }).join('');
-  // QR is absolute-positioned so excluded from flex children
+
   var refTag = refNo
     ? '<div style="display:flex;flex-direction:column;justify-content:center;padding-left:6px;border-left:2px solid #ccc;margin-left:6px;">'
       + '<div style="font-size:8pt;font-family:Arial,sans-serif;color:#555;font-weight:600;white-space:nowrap;">Ref No.</div>'
       + '<div style="font-size:20pt;font-family:Arial,sans-serif;font-weight:900;color:#000;white-space:nowrap;">' + refNo + '</div>'
       + '</div>'
     : '';
-  var qrDiv = qrText
-    ? '<div class="label-qr-wrap" style="position:absolute;bottom:6mm;left:50%;transform:translateX(-50%);display:flex;flex-direction:row;align-items:flex-start;">'
+
+  var qrBlock = qrText
+    ? '<div style="display:flex;flex-direction:row;align-items:flex-start;flex-shrink:0;">'
       + '<div style="text-align:center;">'
       + '<div class="label-qr" data-qr-text="' + qrText + '"></div>'
       + '<div style="font-size:6.5pt;font-family:Arial,sans-serif;font-weight:700;color:#000;margin-top:3px;line-height:1.3;white-space:pre;text-align:center;">' + qrText.replace(/ \| /g, '\n') + '</div>'
@@ -1946,7 +1981,17 @@ function buildLabelCol(fields, itemCount, qrText, refNo) {
       + refTag
       + '</div>'
     : '';
-  return '<div class="label-col">' + fieldDivs + qrDiv + '</div>';
+
+  // Bottom section: ctnStr + boxStr on left, QR block on right — in one flex row, never overlap
+  var bottomSection = '<div style="display:flex;flex-direction:row;align-items:flex-end;justify-content:space-between;padding-right:6mm;gap:4mm;">'
+    + '<div style="display:flex;flex-direction:column;gap:6mm;">'
+    + '<div class="label-field" style="font-size:' + fieldFontSize(ctnStr) + ';white-space:nowrap;">' + ctnStr + '</div>'
+    + '<div class="label-field" style="font-size:' + fieldFontSize(boxStr) + ';white-space:nowrap;">' + boxStr + '</div>'
+    + '</div>'
+    + qrBlock
+    + '</div>';
+
+  return '<div class="label-col">' + topDivs + bottomSection + '</div>';
 }
 
 function generateQRCodes(callback) {
@@ -1966,19 +2011,10 @@ function generateQRCodes(callback) {
 
 function cartonLabelFields(pl, c) {
   var items = getCartonItems(c);
-  var total = pl.cartons.length;
-  // Use same sort as PL export so label box number matches PL
-  var sortedCtns = pl.cartons.slice().sort(function(a,b){
-    var ad = localDate(a.ts), bd = localDate(b.ts);
-    if (ad !== bd) return ad.localeCompare(bd);
-    var ai = getCartonItems(a), bi = getCartonItems(b);
-
-    var as_ = (ai[0]&&ai[0].style)||'', bs_ = (bi[0]&&bi[0].style)||'';
-    var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
-    return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
-  });
-  var displayIdx = sortedCtns.findIndex(function(x){ return x.id === c.id; });
-  var displayNo = displayIdx >= 0 ? displayIdx + 1 : c.boxNo;
+  // Numerator: use _dispIdx (permanent, stable across edits)
+  var displayNo = c._dispIdx || c.boxNo || 0;
+  // Denominator: use pl.total (Total Carton Expected from PL settings), fallback to actual count
+  var total = pl.total || pl.cartons.length;
   var ctnStr = String(displayNo).padStart(3,'0') + '/' + String(total).padStart(3,'0');
   var boxStr = String(displayNo).padStart(3,'0');
   var styles = [];
@@ -2028,7 +2064,7 @@ function printCartonLabel(plId, ctnId) {
   var area = document.getElementById('print-label-area');
   area.innerHTML = '<div class="print-page-label">' + col + '<div class="cut-line"></div><div style="flex:1"></div>' + '</div>';
   document.body.classList.add('printing-label');
-  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); _afterPrintConfirm(pl, [ctnId]); });
+  generateQRCodes(function(){ _doPrint(pl, [ctnId]); });
 }
 
 function printAllLabels(plId) {
@@ -2053,7 +2089,7 @@ function printAllLabels(plId) {
   area.innerHTML = pages;
   document.body.classList.add('printing-label');
   var _allIds = sorted.map(function(c){ return c.id; });
-  generateQRCodes(function(){ _afterPrintConfirm(pl, _allIds); window.print(); document.body.classList.remove('printing-label'); });
+  generateQRCodes(function(){ _doPrint(pl, _allIds); });
 }
 
 // ══ DASHBOARD ══
@@ -2999,6 +3035,19 @@ window.onload = function() {
             });
             var mergedCartons = (pls[idx].cartons||[]).filter(function(c){
               return deletedCartonIds.indexOf(c.id) === -1;
+            }).map(function(lc){
+              // Smart merge: for cartons that exist both locally and remotely,
+              // printed=true wins (either device printed it = it's printed),
+              // _dispIdx from remote if local missing
+              var rc = remoteCartons.find(function(r){ return r.id === lc.id; });
+              if (rc) {
+                return Object.assign({}, lc, {
+                  printed: lc.printed || rc.printed || false,
+                  printedAt: lc.printedAt || rc.printedAt || undefined,
+                  _dispIdx: lc._dispIdx || rc._dispIdx || undefined
+                });
+              }
+              return lc;
             });
             remoteCartons.forEach(function(rc){
               if (localCartonIds.indexOf(rc.id) === -1) { mergedCartons.push(rc); }
