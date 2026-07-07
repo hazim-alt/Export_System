@@ -973,7 +973,10 @@ function buildCartonRows(pl, c, displayBoxNo) {
       measure: c.measure || null,
       ts: c.ts ? new Date(c.ts).toISOString() : null,
       created_by: c.createdBy || null,
-      verified_by: c.verifiedBy || null
+      verified_by: c.verifiedBy || null,
+      disp_idx: c._dispIdx || null,
+      printed: c.printed || false,
+      printed_at: c.printedAt ? new Date(c.printedAt).toISOString() : null
     };
   });
 }
@@ -2999,6 +3002,19 @@ window.onload = function() {
             });
             var mergedCartons = (pls[idx].cartons||[]).filter(function(c){
               return deletedCartonIds.indexOf(c.id) === -1;
+            }).map(function(lc){
+              // Smart merge: for cartons that exist both locally and remotely,
+              // printed=true wins (either device printed it = it's printed),
+              // _dispIdx from remote if local missing
+              var rc = remoteCartons.find(function(r){ return r.id === lc.id; });
+              if (rc) {
+                return Object.assign({}, lc, {
+                  printed: lc.printed || rc.printed || false,
+                  printedAt: lc.printedAt || rc.printedAt || undefined,
+                  _dispIdx: lc._dispIdx || rc._dispIdx || undefined
+                });
+              }
+              return lc;
             });
             remoteCartons.forEach(function(rc){
               if (localCartonIds.indexOf(rc.id) === -1) { mergedCartons.push(rc); }
