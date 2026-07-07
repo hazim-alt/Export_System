@@ -605,7 +605,7 @@ alter table deleted_cartons disable row level security;</code>
 
     <!-- Scanner / Manual mode -->
     <div id="scan-mode-scanner" style="display:none">
-      <p style="color:var(--text-muted);font-size:.8rem;margin-bottom:10px;text-align:center">Letakkan kursor di sini, scan dengan scanner atau taip manual, tekan Enter.</p>
+      <p style="color:var(--text-muted);font-size:.8rem;margin-bottom:10px;text-align:center">Place cursor here, scan with scanner or type manually, press Enter.</p>
       <div style="display:flex;gap:8px">
         <input id="scan-text-input" type="text" placeholder="Scan atau taip QR text di sini..."
           style="flex:1;padding:12px;border-radius:8px;border:2px solid var(--blue);font-size:.9rem;outline:none"
@@ -1196,10 +1196,10 @@ function setMobNav(page) {
 
 function mobQuickAdd() {
   var actives = pls.filter(function(p){ return p.status !== 'done'; });
-  if (actives.length === 0) { toast('Tiada PL aktif. Buat PL dulu.'); go('pl'); setMobNav('pl'); return; }
+  if (actives.length === 0) { toast('No active PL. Create a PL first.'); go('pl'); setMobNav('pl'); return; }
   if (actives.length === 1) { openAddCarton(actives[0].id); return; }
   go('pl'); setMobNav('pl');
-  toast('Pilih PL dahulu, tekan + Add Carton');
+  toast('Select a PL first, then tap + Add Carton');
 }
 
 function toggleSidebar() {
@@ -1354,7 +1354,8 @@ function openCartonList(plId) {
   _cartonViewPlId = plId;
   const el = document.getElementById('pl-list');
 
-  var sortedList = pl.cartons.slice().sort(function(a,b){
+  // First pass: assign _dispIdx to any carton that doesn't have one yet (legacy / new)
+  var _tempSorted = pl.cartons.slice().sort(function(a,b){
     var ad = localDate(a.ts), bd = localDate(b.ts);
     if (ad !== bd) return ad.localeCompare(bd);
     var ai = getCartonItems(a), bi = getCartonItems(b);
@@ -1362,9 +1363,13 @@ function openCartonList(plId) {
     var ac = parseInt((ai[0]&&ai[0].colorCode)||'0'), bc = parseInt((bi[0]&&bi[0].colorCode)||'0');
     return as_.localeCompare(bs_) || ac - bc || a.boxNo - b.boxNo;
   });
+  var _maxIdx = Math.max.apply(null, pl.cartons.map(function(c){ return c._dispIdx||0; }).concat([0]));
+  var _anyNew = false;
+  _tempSorted.forEach(function(c) { if (!c._dispIdx) { c._dispIdx = ++_maxIdx; _anyNew = true; } });
+  if (_anyNew) save();
 
-  // Assign display index before filtering
-  sortedList.forEach(function(c, i) { c._dispIdx = i + 1; });
+  // Sort display by _dispIdx — stable, never changes after edit
+  var sortedList = pl.cartons.slice().sort(function(a,b){ return (a._dispIdx||0) - (b._dispIdx||0); });
 
   var f = _ctnFilters;
   var filtered = sortedList.filter(function(c) {
@@ -1415,10 +1420,15 @@ function openCartonList(plId) {
         var sizesCells = SIZES.map(function(s){ return '<td style="text-align:center">' + (it.sizes&&it.sizes[s] ? it.sizes[s] : '') + '</td>'; }).join('');
         var boxCell = '', refCell = '', pcsCell = '', weightMeasureCells = '', dateCell = '';
         if (idx === 0) {
-          boxCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;font-weight:800;background:var(--card-bg);text-align:center">'
+          var isPrinted = !!c.printed;
+          var printedBadge = isPrinted
+            ? '<div style="margin-top:4px;font-size:.62rem;font-weight:700;color:#16a34a;background:#dcfce7;border-radius:4px;padding:1px 5px;cursor:pointer;white-space:nowrap" onclick="unmarkPrinted(\'' + plId + '\',\'' + c.id + '\')" title="Click to reset">✅ Printed</div>'
+            : '';
+          boxCell = '<td rowspan="' + items.length + '" style="vertical-align:middle;font-weight:800;background:' + (isPrinted ? 'rgba(22,163,74,.08)' : 'var(--card-bg)') + ';text-align:center">'
             + '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;justify-content:center">'
             + '<input type="checkbox" class="ctn-chk" data-id="' + c.id + '" style="width:16px;height:16px" ' + (_deselectedCartonIds.indexOf(c.id) === -1 ? 'checked' : '') + ' onchange="var id=this.dataset.id;if(this.checked){_deselectedCartonIds=_deselectedCartonIds.filter(function(x){return x!==id;});}else{if(_deselectedCartonIds.indexOf(id)===-1)_deselectedCartonIds.push(id);}" />'
-            + '<span style="color:var(--text);font-size:.85rem;font-weight:800;display:block;margin-top:2px">' + boxStr + '</span></label>'
+            + '<span style="color:' + (isPrinted ? '#16a34a' : 'var(--text)') + ';font-size:.85rem;font-weight:800;display:block;margin-top:2px">' + boxStr + '</span></label>'
+            + printedBadge
             + '<div style="margin-top:6px;display:flex;gap:4px;justify-content:center">'
             + '<button class="btn btn-ghost" style="padding:3px 7px;font-size:.68rem" onclick="printCartonLabel(\'' + plId + '\',\'' + c.id + '\')">&#128424;&#65039;</button>'
             + (pl.status !== 'completed' ? '<button class="btn btn-primary" style="padding:3px 7px;font-size:.68rem" onclick="editCarton(\'' + plId + '\',\'' + c.id + '\')">&#9999;&#65039;</button>' : '')
@@ -1495,7 +1505,7 @@ function testDayToggle(plId) {
     var yesterday = new Date(Date.now() - 86400000).toISOString();
     pl.cartons.forEach(function(c) { c.ts = yesterday; });
     _testDayActive = true;
-    toast('🧪 Semua ' + pl.cartons.length + ' carton set ke semalam. Tambah carton baru untuk test, tekan lagi untuk reset.');
+    toast('🧪 All ' + pl.cartons.length + ' cartons set to yesterday. Add a new carton to test, press again to reset.');
   } else {
     var now = new Date().toISOString();
     pl.cartons.forEach(function(c) { c.ts = now; });
@@ -1536,7 +1546,7 @@ function openPrintRange(plId) {
   // Show total cartons as hint
   var pl = getPL(plId);
   if (pl) {
-    document.getElementById('print-range-info').textContent = pl.cartons.length + ' cartons dalam PL ini';
+    document.getElementById('print-range-info').textContent = pl.cartons.length + ' cartons in this PL';
   }
   openModal('modal-print-range');
 }
@@ -1557,15 +1567,15 @@ function executePrintRange() {
   var selected; var from, to;
   if (isDateMode) {
     var dateVal = document.getElementById('print-date-val').value;
-    if (!dateVal) { toast('⚠️ Pilih tarikh dulu!'); return; }
+    if (!dateVal) { toast('⚠️ Please select a date first!'); return; }
     selected = pl.cartons.filter(function(c){ return localDate(c.ts) === dateVal; }).sort(SORT_FN);
   } else {
     from = parseInt(document.getElementById('print-range-from').value) || 1;
     to = parseInt(document.getElementById('print-range-to').value) || from;
-    if (from < 1 || to < from) { toast('⚠️ Range tak valid!'); return; }
+    if (from < 1 || to < from) { toast('⚠️ Invalid range!'); return; }
     selected = pl.cartons.slice().sort(SORT_FN).slice(from - 1, to);
   }
-  if (selected.length === 0) { toast('⚠️ Tiada carton dalam range tu!'); return; }
+  if (selected.length === 0) { toast('⚠️ No cartons in that range!'); return; }
 
   closeModal('modal-print-range');
   var slots = selected.map(function(c){ return cartonLabelFields(pl, c); });
@@ -1576,7 +1586,8 @@ function executePrintRange() {
   }
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
-  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); });
+  var _rangeIds = selected.map(function(c){ return c.id; });
+  generateQRCodes(function(){ _afterPrintConfirm(pl, _rangeIds); window.print(); document.body.classList.remove('printing-label'); });
   if (isDateMode) {
     toast('🖨️ Printing ' + selected.length + ' cartons (' + document.getElementById('print-date-val').value + ')');
   } else {
@@ -1587,7 +1598,7 @@ function executePrintRange() {
 function printSelectedLabels(plId) {
   var pl = getPL(plId); if (!pl) return;
   var selected = Array.from(document.querySelectorAll('.ctn-chk:checked')).map(function(el){ return el.dataset.id; });
-  if (selected.length === 0) { toast('⚠️ No cartons dipilih!'); return; }
+  if (selected.length === 0) { toast('⚠️ No cartons selected!'); return; }
   var cartons = pl.cartons.filter(function(c){ return selected.indexOf(c.id) !== -1; })
     .sort(function(a,b){
     var ad = localDate(a.ts), bd = localDate(b.ts);
@@ -1605,7 +1616,37 @@ function printSelectedLabels(plId) {
   }
   document.getElementById('print-label-area').innerHTML = pages;
   document.body.classList.add('printing-label');
-  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); });
+  var _printedIds = selected.slice();
+  generateQRCodes(function(){ _afterPrintConfirm(pl, _printedIds); window.print(); document.body.classList.remove('printing-label'); });
+}
+
+function markPrinted(pl, ctnIds) {
+  ctnIds.forEach(function(id){
+    var c = pl.cartons.find(function(x){ return x.id === id; });
+    if (c) { c.printed = true; c.printedAt = new Date().toISOString(); }
+  });
+  save();
+  if (_cartonViewPlId === pl.id) openCartonList(pl.id);
+}
+function unmarkPrinted(plId, ctnId) {
+  var pl = getPL(plId); if (!pl) return;
+  var c = pl.cartons.find(function(x){ return x.id === ctnId; });
+  if (c) { c.printed = false; delete c.printedAt; }
+  save(); openCartonList(plId);
+}
+function _afterPrintConfirm(pl, ctnIds) {
+  var _bar = document.getElementById('_print-confirm-bar');
+  if (_bar) _bar.remove();
+  var bar = document.createElement('div');
+  bar.id = '_print-confirm-bar';
+  bar.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#1c2128;border:1px solid #30363d;border-radius:12px;padding:12px 18px;z-index:9999;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,.6);font-size:.88rem;color:#e6edf3;white-space:nowrap';
+  bar.innerHTML = '<span>📄 Label printed?</span>'
+    + '<button id="_pconf-yes" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:7px 16px;cursor:pointer;font-size:.84rem;font-weight:700">✅ Yes, printed</button>'
+    + '<button id="_pconf-no" style="background:#374151;color:#fff;border:none;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:.84rem">✕ No</button>';
+  document.body.appendChild(bar);
+  var _timer = setTimeout(function(){ if(bar.parentNode) bar.remove(); }, 15000);
+  document.getElementById('_pconf-yes').onclick = function() { clearTimeout(_timer); bar.remove(); markPrinted(pl, ctnIds); };
+  document.getElementById('_pconf-no').onclick = function() { clearTimeout(_timer); bar.remove(); };
 }
 
 function shareToWhatsApp(plId) {
@@ -1619,7 +1660,7 @@ function shareToWhatsApp(plId) {
   var pct = expected > 0 ? Math.round(totalCtns / expected * 100) : 0;
   var now = new Date();
   var hh = now.getHours(), mm = String(now.getMinutes()).padStart(2,'0');
-  var ampm = hh < 12 ? 'PG' : 'PTG';
+  var ampm = hh < 12 ? 'AM' : 'PM';
   var hh12 = hh % 12 || 12;
   var dd = String(now.getDate()).padStart(2,'0');
   var mo = String(now.getMonth()+1).padStart(2,'0');
@@ -1680,11 +1721,18 @@ function saveCarton(doPrint) {
   var autoBoxNo = editId
     ? (pl.cartons.find(function(x){ return x.id === editId; })||{}).boxNo || (pl.cartons.length + 1)
     : (pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x.boxNo||0; })) + 1 : 1);
+  var _origCtn = editId ? (pl.cartons.find(function(x){ return x.id === editId; }) || {}) : {};
+  var _dispIdx = editId
+    ? (_origCtn._dispIdx || 0)
+    : ((pl.cartons.length > 0 ? Math.max.apply(null, pl.cartons.map(function(x){ return x._dispIdx||0; })) : 0) + 1);
   const carton = {
     id: editId || uid(), boxNo: autoBoxNo, refNo: refNo, items,
     totalPcs: tPcs, weight: v('ctn-weight'), measure: (v('ctn-measure')||'').replace(/[X*]/g,'x'),
-    ts: editId ? ((pl.cartons.find(function(x){ return x.id === editId; })||{}).ts || new Date().toISOString()) : new Date().toISOString(),
-    createdBy: currentUser ? currentUser.name : '\u2014'
+    ts: editId ? (_origCtn.ts || new Date().toISOString()) : new Date().toISOString(),
+    createdBy: currentUser ? currentUser.name : '\u2014',
+    _dispIdx: _dispIdx,
+    printed: editId ? (_origCtn.printed || false) : false,
+    printedAt: editId ? (_origCtn.printedAt) : undefined
   };
   if (editId) { pl.cartons = pl.cartons.map(c => c.id === editId ? carton : c); }
   else pl.cartons.push(carton);
@@ -1977,16 +2025,15 @@ function printCartonLabel(plId, ctnId) {
   if (!pl || !c) return;
   var result = cartonLabelFields(pl, c);
   var col = buildLabelCol(result.fields, result.itemCount, result.qrText, result.refNo);
-  var col2 = buildLabelCol(result.fields, result.itemCount, result.qrText, result.refNo);
   var area = document.getElementById('print-label-area');
-  area.innerHTML = '<div class="print-page-label">' + col + '<div class="cut-line"></div>' + col2 + '</div>';
+  area.innerHTML = '<div class="print-page-label">' + col + '<div class="cut-line"></div><div style="flex:1"></div>' + '</div>';
   document.body.classList.add('printing-label');
-  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); });
+  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); _afterPrintConfirm(pl, [ctnId]); });
 }
 
 function printAllLabels(plId) {
   var pl = getPL(plId);
-  if (!pl || pl.cartons.length === 0) { toast('No cartons untuk diprint!'); return; }
+  if (!pl || pl.cartons.length === 0) { toast('No cartons to print!'); return; }
   var sorted = pl.cartons.slice().sort(function(a,b){
     var ad = localDate(a.ts), bd = localDate(b.ts);
     if (ad !== bd) return ad.localeCompare(bd);
@@ -2005,7 +2052,8 @@ function printAllLabels(plId) {
   var area = document.getElementById('print-label-area');
   area.innerHTML = pages;
   document.body.classList.add('printing-label');
-  generateQRCodes(function(){ window.print(); document.body.classList.remove('printing-label'); });
+  var _allIds = sorted.map(function(c){ return c.id; });
+  generateQRCodes(function(){ _afterPrintConfirm(pl, _allIds); window.print(); document.body.classList.remove('printing-label'); });
 }
 
 // ══ DASHBOARD ══
@@ -2177,7 +2225,7 @@ function renderExportPreview() {
   var pl = getPL(plId);
   if (!pl) { el.innerHTML = ''; return; }
   if (pl.cartons.length === 0) {
-    el.innerHTML = '<div class="alert alert-yellow" style="margin-top:12px">No cartons yet dalam PL ini.</div>';
+    el.innerHTML = '<div class="alert alert-yellow" style="margin-top:12px">No cartons yet in this PL.</div>';
     return;
   }
   el.innerHTML = '<div style="margin-top:14px;border:1px solid #30363d;border-radius:10px;overflow:auto;padding:10px;background:white">'
@@ -2414,7 +2462,7 @@ function processScanResult(text) {
       });
     }
   });
-  if (!foundPl || !foundC) { toast('Carton tidak dijumpai dalam sistem.'); if (scanMode === 'cam') setTimeout(startScan, 1200); return; }
+  if (!foundPl || !foundC) { toast('Carton not found in system.'); if (scanMode === 'cam') setTimeout(startScan, 1200); return; }
   scannedMap[foundC.id] = Date.now();
   saveScanned();
   renderScanList();
@@ -2479,7 +2527,7 @@ function renderScanList() {
 function unscanCarton(ctnId) { delete scannedMap[ctnId]; saveScanned(); renderScanList(); }
 
 function resetScanPL(plId) {
-  if (!confirm('Reset semua scan untuk PL ini?')) return;
+  if (!confirm('Reset all scans for this PL?')) return;
   var pl = getPL(plId);
   if (!pl) return;
   pl.cartons.forEach(function(c){ delete scannedMap[c.id]; });
@@ -2533,7 +2581,7 @@ function downloadPDF() {
   if (!plId) { toast('Select a PL first!'); return; }
   var pl = getPL(plId);
   if (!pl) return;
-  if (pl.cartons.length === 0) { toast('No cartons yet dalam PL ini.'); return; }
+  if (pl.cartons.length === 0) { toast('No cartons yet in this PL.'); return; }
 
   var docHtml = buildPLDoc(pl);
   var win = window.open('', '_blank');
@@ -2674,7 +2722,7 @@ function doRegister() {
     okEl.textContent = '⏳ Checking...'; okEl.style.display = '';
     loadUsersFromSupabase(function(){ _finishRegister(); });
   } else {
-    errEl.textContent = '⚠️ Setup Supabase dulu sebelum register! Klik link Setup Supabase di bawah.';
+    errEl.textContent = '⚠️ Please set up Supabase before registering! Click the Setup Supabase link below.';
     errEl.style.display = '';
     okEl.style.display = 'none';
     return;
@@ -3033,7 +3081,7 @@ window.onload = function() {
     if (!ca) return;
     var ind = document.createElement('div');
     ind.style.cssText = 'position:fixed;top:58px;left:50%;transform:translateX(-50%) translateY(-60px);background:#1f6feb;color:#fff;padding:8px 20px;border-radius:999px;font-size:.8rem;font-weight:700;z-index:400;transition:transform .2s,opacity .2s;opacity:0;pointer-events:none;white-space:nowrap';
-    ind.textContent = 'Tarik untuk refresh...';
+    ind.textContent = 'Pull to refresh...';
     document.body.appendChild(ind);
     var startY = 0, pulling = false, THRESH = 65;
     ca.addEventListener('touchstart', function(e) {
@@ -3046,7 +3094,7 @@ window.onload = function() {
         var prog = Math.min(dy / THRESH, 1);
         ind.style.opacity = prog;
             ind.style.transform = 'translateX(-50%) translateY(' + Math.min(dy * 0.4, 20) + 'px)';
-        ind.textContent = dy >= THRESH ? 'Lepas untuk refresh!' : 'Tarik untuk refresh...';
+        ind.textContent = dy >= THRESH ? 'Release to refresh!' : 'Pull to refresh...';
       }
     }, {passive:true});
     ca.addEventListener('touchend', function(e) {
