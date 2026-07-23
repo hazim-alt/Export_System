@@ -142,11 +142,11 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--te
 .pl-card-actions{display:flex;gap:7px;flex-shrink:0;flex-wrap:wrap}
 
 /* ══ TABLE ══ */
-.tbl{width:100%;border-collapse:collapse;font-size:.8rem}
-.tbl th{background:rgba(88,166,255,.1);color:var(--blue);padding:8px;text-align:left;font-size:.72rem;letter-spacing:.3px;white-space:nowrap;border-bottom:1px solid var(--border)}
-.tbl td{padding:7px 8px;border-bottom:1px solid rgba(48,54,61,.5);vertical-align:middle;color:var(--text);white-space:nowrap}
+.tbl{width:100%;border-collapse:collapse;font-size:.8rem;border:1px solid var(--border)}
+.tbl th{background:rgba(88,166,255,.1);color:var(--blue);padding:8px;text-align:left;font-size:.72rem;letter-spacing:.3px;white-space:nowrap;border:1px solid var(--border)}
+.tbl td{padding:7px 8px;border:1px solid rgba(48,54,61,.6);vertical-align:middle;color:var(--text);white-space:nowrap}
 .tbl tr:hover td{background:rgba(255,255,255,.03)}
-.tbl tr:last-child td{border-bottom:none}
+.tbl tr:last-child td{border-bottom:1px solid rgba(48,54,61,.6)}
 .status-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.7rem;font-weight:700}
 .pill-packed{background:rgba(63,185,80,.15);color:#3fb950}
 .pill-pending{background:rgba(227,179,65,.15);color:#e3b341}
@@ -562,8 +562,8 @@ alter table deleted_cartons disable row level security;</code>
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-primary btn-lg" onclick="printPLDoc()">🖨️ Print Packing List</button>
-      <button class="btn btn-ghost btn-lg" style="background:#e8f5e9;color:#1b5e20" onclick="downloadExcel()">📊 Download Excel</button>
+      <button class="btn btn-primary btn-lg" onclick="printPLDoc();renderExportPreview('pl')">🖨️ Print Packing List</button>
+      <button class="btn btn-ghost btn-lg" style="background:#e8f5e9;color:#1b5e20" onclick="renderExportPreview('excel')">📊 Download Excel</button>
       <button class="btn btn-ghost btn-lg" style="background:#fce4ec;color:#880e4f" onclick="downloadPDF()">📄 Download PDF</button>
     </div>
   </div>
@@ -665,7 +665,81 @@ alter table deleted_cartons disable row level security;</code>
 <!-- ════ SCRIPT ════ -->
 <script>
 // ══ STATE ══
-const SIZES = ['XS','S','M','L','XL','2XL','3XL','4XL','5XL','6XL'];
+const SIZE_SETS = {
+  'adult': ['XS','S','M','L','XL','2XL','3XL','4XL','5XL','6XL'],
+  'kids':  ['2Y-3Y','4Y-5Y','6Y-7Y','8Y-9Y','10Y-11Y','12Y-13Y'],
+  'baby':  ['12M-18M','18M-24M']
+};
+const SIZES = SIZE_SETS['adult']; // backward compat (CSV/PL export fallback)
+function getSizeList(sizeSet) { return SIZE_SETS[sizeSet] || SIZE_SETS['adult']; }
+function detectSizeSet(sizes) {
+  if (!sizes) return 'adult';
+  var keys = Object.keys(sizes).filter(function(k){ return sizes[k] > 0; });
+  if (keys.some(function(k){ return SIZE_SETS.baby.indexOf(k) >= 0; })) return 'baby';
+  if (keys.some(function(k){ return SIZE_SETS.kids.indexOf(k) >= 0; })) return 'kids';
+  return 'adult';
+}
+function getActiveSizes(pl) {
+  var info = getActiveSizesBySet(pl);
+  return info.flat;
+}
+function getActiveSizesBySet(pl) {
+  var used = {};
+  (pl.cartons||[]).forEach(function(c){
+    getCartonItems(c).forEach(function(it){
+      Object.keys(it.sizes||{}).forEach(function(s){ if ((it.sizes||{})[s]) used[s] = true; });
+    });
+  });
+  var groups = [];
+  var flat = [];
+  var SET_LABELS = { adult: 'ADULT', kids: 'KIDS / BOY / GIRL', baby: 'BABY' };
+  ['adult','kids','baby'].forEach(function(key){
+    var sizes = SIZE_SETS[key].filter(function(s){ return used[s]; });
+    if (sizes.length > 0) { groups.push({ key: key, label: SET_LABELS[key], sizes: sizes }); flat = flat.concat(sizes); }
+  });
+  if (flat.length === 0) { groups = [{ key:'adult', label:'ADULT', sizes: SIZE_SETS.adult }]; flat = SIZE_SETS.adult; }
+  return { flat: flat, groups: groups };
+}
+// Build shared-column map: adult in row2, kids start col0 row3, baby at end row3
+function getSizeColumnMap(pl) {
+  var sizeInfo = getActiveSizesBySet(pl);
+  var groups = sizeInfo.groups;
+  var catSizes = {};
+  groups.forEach(function(g){ catSizes[g.key] = g.sizes; });
+  var adultSizes = catSizes.adult || [];
+  var kidsSizes  = catSizes.kids  || [];
+  var babySizes  = catSizes.baby  || [];
+  var multiCat = groups.length > 1;
+  if (!multiCat) {
+    var onlySizes = groups.length > 0 ? groups[0].sizes : SIZE_SETS.adult;
+    var onlyKey   = groups.length > 0 ? groups[0].key   : 'adult';
+    return { numCols: onlySizes.length, multiCat: false, row2: onlySizes.slice(), row3: null,
+      colMap: onlySizes.map(function(s){ var m={adult:null,kids:null,baby:null}; m[onlyKey]=s; return m; }) };
+  }
+  // Shared column layout: numCols = adult count (or kids if no adult)
+  var numCols = adultSizes.length || kidsSizes.length || babySizes.length;
+  var babyStart = numCols - babySizes.length;
+  var colMap = [];
+  for (var i = 0; i < numCols; i++) {
+    colMap.push({
+      adult: i < adultSizes.length ? adultSizes[i] : null,
+      kids:  i < kidsSizes.length  ? kidsSizes[i]  : null,
+      baby:  (babySizes.length > 0 && i >= babyStart) ? babySizes[i - babyStart] : null
+    });
+  }
+  var row2 = colMap.map(function(col){ return col.adult || ''; });
+  var row3 = colMap.map(function(col){ return col.kids || col.baby || ''; });
+  return { numCols: numCols, multiCat: true, row2: row2, row3: row3, colMap: colMap };
+}
+// Get qty array for one item across all size columns
+function getItemColQtys(it, colMap) {
+  var sz = it.sizes || {};
+  var sizeSet = it.sizeSet || detectSizeSet(sz);
+  return colMap.map(function(col){
+    var key = col[sizeSet];
+    return key ? (sz[key] || 0) : 0;
+  });
+}
 const COLOUR_MAP = {
   '2':'OPAL BLACK','24':'ANTIQUE WHITE','20':'DARK NAVY','75':'DARK BROWN',
   '95':'BURGUNDY RED','63':'MAHOGANY RED','96':'DUSTY LILAC','97':'LIGHT BLUE',
@@ -772,18 +846,31 @@ function itemRowOpts() {
   return '<option value="">-- Select Item --</option>' + ITEMS.map(i=>`<option value="${i}">${i}</option>`).join('');
 }
 
+function _buildSizeGridHTML(id, ctx, sizeSet, existingSizes) {
+  var slist = getSizeList(sizeSet);
+  var cols = slist.length <= 2 ? 2 : slist.length <= 6 ? 3 : 5;
+  return '<div class="size-grid" id="sg-' + id + '" style="grid-template-columns:repeat(' + cols + ',1fr)">'
+    + slist.map(function(s){
+      return '<div class="size-cell"><div class="size-lbl">' + s + '</div>'
+        + '<input type="number" class="size-inp ir-size" data-size="' + s + '" data-ctx="' + ctx + '" data-rid="' + id + '" placeholder="0" min="0" inputmode="numeric" value="' + ((existingSizes&&existingSizes[s])||'') + '" oninput="updateGrandTotalDebounced(\'' + ctx + '\')" /></div>';
+    }).join('') + '</div>';
+}
+
+function _sizeSetSelector(id, ctx, activeSS) {
+  var opts = [['adult','Adult (XS–6XL)'],['kids','Kids (2Y–13Y)'],['baby','Baby (12M–24M)']];
+  // Hidden — auto-detected from style name, no visible dropdown
+  return '<select id="ssel-' + id + '" class="ir-sstype" onchange="changeSizeSet(' + id + ',\'' + ctx + '\')" style="display:none">'
+    + opts.map(function(o){ return '<option value="' + o[0] + '"' + (activeSS===o[0]?' selected':'') + '>' + o[1] + '</option>'; }).join('')
+    + '</select>';
+}
+
 function addItemRow(ctx, data={}) {
   const id = ++itemRowCounter;
   const container = document.getElementById(ctx + '-items');
   const isModal = ctx === 'modal';
-
-  const sizeInputs = SIZES.map(s => `
-    <div class="size-cell">
-      <div class="size-lbl">${s}</div>
-      <input type="number" class="size-inp ir-size" data-size="${s}" data-ctx="${ctx}" data-rid="${id}"
-        placeholder="0" min="0" inputmode="numeric" value="${data.sizes?.[s]||''}"
-        oninput="updateGrandTotalDebounced('${ctx}')" />
-    </div>`).join('');
+  const activeSS = data.sizeSet || detectSizeSet(data.sizes);
+  const ssSelector = _sizeSetSelector(id, ctx, activeSS);
+  const sizeGrid = _buildSizeGridHTML(id, ctx, activeSS, data.sizes||{});
 
   if (isModal) {
     const rowCount = container.children.length + 1;
@@ -797,7 +884,7 @@ function addItemRow(ctx, data={}) {
       <div class="g2" style="margin-bottom:8px">
         <div class="fg">
           <label>ITEM DESCRIPTION</label>
-          <select class="ir-style">${itemRowOpts()}</select>
+          <select class="ir-style" onchange="autoDetectSizeSet(this,${id},'${ctx}')">${itemRowOpts()}</select>
         </div>
         <div class="fg">
           <label>COLOR CODE</label>
@@ -811,7 +898,7 @@ function addItemRow(ctx, data={}) {
           style="background:#f0f7ff;text-transform:uppercase;color:${data.colorName?'var(--green)':'#aaa'}"
           value="${data.colorName||''}" />
       </div>
-      <div class="size-grid">${sizeInputs}</div>
+      ${ssSelector}${sizeGrid}
       <div class="item-subtotal" id="isub-${id}">Subtotal: 0 PCS</div>`;
     if (data.style) div.querySelector('.ir-style').value = data.style;
     container.appendChild(div);
@@ -826,7 +913,7 @@ function addItemRow(ctx, data={}) {
       </div>
       <div style="margin-bottom:10px">
         <div class="field-lbl">ITEM DESCRIPTION</div>
-        <select class="ir-style" style="width:100%;font-size:.95rem;font-weight:700;padding:11px;border:2px solid var(--border);border-radius:8px;outline:none;font-family:inherit;background:white">${itemRowOpts()}</select>
+        <select class="ir-style" onchange="autoDetectSizeSet(this,${id},'${ctx}')" style="width:100%;font-size:.95rem;font-weight:700;padding:11px;border:2px solid var(--border);border-radius:8px;outline:none;font-family:inherit;background:white">${itemRowOpts()}</select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
         <div>
@@ -842,12 +929,41 @@ function addItemRow(ctx, data={}) {
             value="${data.colorName||''}" />
         </div>
       </div>
+      ${ssSelector}
       <div class="field-lbl" style="margin-bottom:6px">QTY PER SIZE</div>
-      <div class="size-grid">${sizeInputs}</div>
+      ${sizeGrid}
       <div class="item-subtotal" id="isub-${id}">Subtotal: 0 PCS</div>`;
     if (data.style) div.querySelector('.ir-style').value = data.style;
     container.appendChild(div);
   }
+  updateGrandTotal(ctx);
+}
+
+function autoDetectSizeSet(el, rid, ctx) {
+  var val = (el.value || '').toUpperCase();
+  var sizeSet = 'adult';
+  if (val.indexOf('BABY') >= 0) sizeSet = 'baby';
+  else if (val.indexOf('BOY') >= 0 || val.indexOf('GIRL') >= 0) sizeSet = 'kids';
+  var selEl = document.getElementById('ssel-' + rid);
+  if (selEl && selEl.value !== sizeSet) {
+    selEl.value = sizeSet;
+    changeSizeSet(rid, ctx);
+  }
+}
+
+function changeSizeSet(rid, ctx) {
+  var selEl = document.getElementById('ssel-' + rid);
+  if (!selEl) return;
+  var sizeSet = selEl.value;
+  var sgEl = document.getElementById('sg-' + rid);
+  if (!sgEl) return;
+  var slist = getSizeList(sizeSet);
+  var cols = slist.length <= 2 ? 2 : slist.length <= 6 ? 3 : 5;
+  sgEl.style.gridTemplateColumns = 'repeat(' + cols + ',1fr)';
+  sgEl.innerHTML = slist.map(function(s){
+    return '<div class="size-cell"><div class="size-lbl">' + s + '</div>'
+      + '<input type="number" class="size-inp ir-size" data-size="' + s + '" data-ctx="' + ctx + '" data-rid="' + rid + '" placeholder="0" min="0" inputmode="numeric" value="" oninput="updateGrandTotalDebounced(\'' + ctx + '\')" /></div>';
+  }).join('');
   updateGrandTotal(ctx);
 }
 
@@ -891,11 +1007,13 @@ function getItemRowsData(ctx) {
       sizes[inp.dataset.size] = v;
       pcs += v;
     });
+    const ssEl = block.querySelector('.ir-sstype');
+    const sizeSet = ssEl ? ssEl.value : 'adult';
     items.push({
       style: styleEl?.value || '',
       colorCode: codeEl?.value.trim() || '',
       colorName: nameEl?.value || '',
-      sizes, pcs
+      sizes, pcs, sizeSet
     });
   });
   return items;
@@ -1395,19 +1513,22 @@ function openCartonList(plId) {
     return true;
   });
 
-  // Compute footer totals
+  // Compute footer totals using shared column map
+  var _clInfo = getSizeColumnMap(pl);
+  var _clMap = _clInfo.colMap;
+  var _clNum = _clInfo.numCols;
+  var _clMulti = _clInfo.multiCat;
   var _ftTotalCTN = filtered.length;
   var _ftTotalPCS = 0;
-  var _ftSizes = {};
-  SIZES.forEach(function(s){ _ftSizes[s] = 0; });
+  var _ftColTotals = _clMap.map(function(){ return 0; });
   filtered.forEach(function(c){
     var items = getCartonItems(c);
     _ftTotalPCS += items.reduce(function(s,it){ return s+(it.pcs||0); }, 0);
     items.forEach(function(it){
-      SIZES.forEach(function(s){ if (it.sizes && it.sizes[s]) _ftSizes[s] += it.sizes[s]; });
+      getItemColQtys(it, _clMap).forEach(function(q,i){ _ftColTotals[i] += q; });
     });
   });
-  var _ftSizeCells = SIZES.map(function(s){ return '<td style="text-align:center;font-weight:700">' + (_ftSizes[s] || '') + '</td>'; }).join('');
+  var _ftSizeCells = _ftColTotals.map(function(q){ return '<td style="text-align:center;font-weight:700">' + (q || '') + '</td>'; }).join('');
   var _footerRow = '<tfoot style="position:sticky;bottom:0;z-index:3">'
     + '<tr style="background:var(--sidebar-bg);border-top:2px solid var(--blue)">'
     + '<td style="text-align:center;font-size:.75rem;font-weight:800;padding:5px 4px;white-space:nowrap">TOTAL<br><span style="font-size:.85rem;color:var(--blue)">' + _ftTotalCTN + ' CTN</span></td>'
@@ -1420,7 +1541,7 @@ function openCartonList(plId) {
 
   var rows = '';
   if (filtered.length === 0) {
-    var colspan = 6 + SIZES.length + 4;
+    var colspan = 6 + _clNum + 4;
     rows = '<tr><td colspan="' + colspan + '" style="text-align:center;color:#aaa;padding:20px">' + (pl.cartons.length === 0 ? 'No cartons yet' : 'No cartons match filter') + '</td></tr>';
   } else {
     filtered.forEach(function(c, cIdx) {
@@ -1429,7 +1550,7 @@ function openCartonList(plId) {
       var totalPcs = items.reduce(function(s,it){ return s + (it.pcs||0); }, 0);
       var dateStr = localDate(c.ts) || '—';
       items.forEach(function(it, idx) {
-        var sizesCells = SIZES.map(function(s){ return '<td style="text-align:center">' + (it.sizes&&it.sizes[s] ? it.sizes[s] : '') + '</td>'; }).join('');
+        var sizesCells = getItemColQtys(it, _clMap).map(function(q){ return '<td style="text-align:center">' + (q || '') + '</td>'; }).join('');
         var boxCell = '', refCell = '', pcsCell = '', weightMeasureCells = '', dateCell = '';
         if (idx === 0) {
           var isPrinted = !!c.printed;
@@ -1472,7 +1593,7 @@ function openCartonList(plId) {
     + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:80px" placeholder="Style..." data-filter-key="style" value="' + (fv.style||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'style\',this.value)"></td>'
     + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:44px" placeholder="Code" data-filter-key="colorCode" value="' + (fv.colorCode||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'colorCode\',this.value)"></td>'
     + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:80px" placeholder="Color..." data-filter-key="colorName" value="' + (fv.colorName||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'colorName\',this.value)"></td>'
-    + SIZES.map(function(){ return '<td></td>'; }).join('')
+    + _clMap.map(function(){ return '<td></td>'; }).join('')
     + '<td></td><td></td><td></td>'
     + '<td style="padding:3px 2px"><input style="' + FI + ';min-width:80px" placeholder="YYYY-MM-DD" data-filter-key="date" value="' + (fv.date||'') + '" oninput="_applyCartonFilter(\'' + plId + '\',\'date\',this.value)"></td>'
     + '</tr>';
@@ -1495,18 +1616,23 @@ function openCartonList(plId) {
     + '<div class="card" style="padding:0;overflow:hidden">'
     + '<div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 210px)">'
     + '<table class="tbl" style="border-collapse:separate;border-spacing:0"><thead style="position:sticky;top:0;z-index:3">'
-    + '<tr>'
-    + '<th style="background:var(--card-bg)">Box No</th>'
-    + '<th style="background:var(--card-bg)">Ref No</th>'
-    + '<th style="background:var(--card-bg)">Style</th>'
-    + '<th style="background:var(--card-bg)">Color Code</th>'
-    + '<th style="background:var(--card-bg)">Color Name</th>'
-    + SIZES.map(function(s){ return '<th style="background:var(--card-bg)">' + s + '</th>'; }).join('')
-    + '<th style="background:var(--card-bg)">PCS</th>'
-    + '<th style="background:var(--card-bg)">Weight</th>'
-    + '<th style="background:var(--card-bg)">Measure</th>'
-    + '<th style="background:var(--card-bg)">Create Date</th>'
-    + '</tr>'
+    + (function(){
+        var _bg = 'background:var(--card-bg)';
+        var _HR = _clMulti ? 2 : 1;
+        var _fixedTH = function(txt){ return '<th style="'+_bg+'"'+ (_HR>1?' rowspan="'+_HR+'"':'') +'>'+txt+'</th>'; };
+        var hdr = '<tr>'
+          + _fixedTH('Box No') + _fixedTH('Ref No') + _fixedTH('Style') + _fixedTH('Color Code') + _fixedTH('Color Name');
+        if (_clMulti) {
+          hdr += _clInfo.row2.map(function(s){ return '<th style="'+_bg+'">'+(s||'')+'</th>'; }).join('');
+        } else {
+          hdr += _clInfo.row2.map(function(s){ return '<th style="'+_bg+'">'+s+'</th>'; }).join('');
+        }
+        hdr += _fixedTH('PCS') + _fixedTH('Weight') + _fixedTH('Measure') + _fixedTH('Create Date') + '</tr>';
+        if (_clMulti) {
+          hdr += '<tr>' + _clInfo.row3.map(function(s){ return '<th style="'+_bg+';font-size:.75rem">'+(s||'')+'</th>'; }).join('') + '</tr>';
+        }
+        return hdr;
+      })()
     + filterRow
     + '</thead><tbody>' + rows + '</tbody>' + _footerRow + '</table></div></div>';
 }
@@ -2252,13 +2378,90 @@ function renderExportSelect() {
   if (cur) sel.value = cur;
 }
 
-function renderExportPreview() {
+function buildExcelPreviewHTML(pl) {
+  var colInfo = getSizeColumnMap(pl);
+  var colMap = colInfo.colMap;
+  var numCols = colInfo.numCols;
+  var multiCat = colInfo.multiCat;
+  var sorted = pl.cartons.slice().sort(function(a,b){ return (a._dispIdx||0) - (b._dispIdx||0); });
+  var TH = 'border:1px solid #bbb;padding:5px 8px;text-align:center;font-size:.75rem;font-weight:700;background:#c6efce;white-space:nowrap;';
+  var THS = 'border:1px solid #bbb;padding:5px 8px;text-align:center;font-size:.75rem;font-weight:700;background:#9dc3e6;white-space:nowrap;';
+  var THe = 'border:1px solid #bbb;background:#eaf4ff;';
+  var TD = 'border:1px solid #ddd;padding:4px 6px;font-size:.74rem;white-space:nowrap;';
+  var TDc = TD + 'text-align:center;';
+  var HR = multiCat ? 3 : 2;
+  var html = '<div style="overflow-x:auto;margin-top:14px;border:1px solid #30363d;border-radius:10px;padding:12px;background:#fff">';
+  html += '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:10px;font-size:.8rem">'
+    + '<span><b>PL:</b> ' + (pl.name||'') + '</span>'
+    + '<span><b>Invoice:</b> ' + (pl.invNo||'—') + '</span>'
+    + '<span><b>Destination:</b> ' + (pl.dest||'—') + '</span>'
+    + '<span><b>Total Expected:</b> ' + (pl.total||'—') + '</span>'
+    + '</div>';
+  html += '<table style="border-collapse:collapse;width:100%;min-width:600px"><thead>';
+  html += '<tr>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Box No</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Ref No</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Style</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Color Code</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Color Name</th>'
+    + '<th style="'+THS+'" colspan="'+numCols+'">尺寸  SIZE</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Total PCS</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Weight (kg)</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Measure</th>'
+    + '<th style="'+TH+'" rowspan="'+HR+'">Date</th>'
+    + '</tr>';
+  if (multiCat) {
+    html += '<tr>' + colInfo.row2.map(function(s){ return s ? '<th style="'+THS+'">'+s+'</th>' : '<th style="'+THe+'"></th>'; }).join('') + '</tr>';
+    html += '<tr>' + colInfo.row3.map(function(s){ return s ? '<th style="'+THS+'">'+s+'</th>' : '<th style="'+THe+'"></th>'; }).join('') + '</tr>';
+  } else {
+    html += '<tr>' + colInfo.row2.map(function(s){ return '<th style="'+THS+'">'+s+'</th>'; }).join('') + '</tr>';
+  }
+  html += '</thead><tbody>';
+  sorted.forEach(function(c) {
+    var items = getCartonItems(c);
+    var boxStr = String(c._dispIdx || c.boxNo || 0).padStart(3, '0');
+    var dateStr = c.ts ? new Date(c.ts).toLocaleDateString('en-GB') : '';
+    items.forEach(function(it, idx) {
+      var qtys = getItemColQtys(it, colMap);
+      html += '<tr>'
+        + (idx===0 ? '<td style="'+TD+'font-weight:700;text-align:center" rowspan="'+items.length+'">'+boxStr+'</td><td style="'+TDc+'" rowspan="'+items.length+'">'+(c.refNo||'')+'</td>' : '')
+        + '<td style="'+TD+'">'+(it.style||'')+'</td>'
+        + '<td style="'+TDc+'">'+(it.colorCode||'')+'</td>'
+        + '<td style="'+TD+'">'+(it.colorName||'')+'</td>'
+        + qtys.map(function(q){ return '<td style="'+TDc+'">'+(q||'')+'</td>'; }).join('')
+        + (idx===0 ? '<td style="'+TDc+';font-weight:700" rowspan="'+items.length+'">'+(c.totalPcs||0)+'</td><td style="'+TDc+'" rowspan="'+items.length+'">'+(c.weight||'')+'</td><td style="'+TDc+'" rowspan="'+items.length+'">'+(c.measure||'')+'</td><td style="'+TDc+'" rowspan="'+items.length+'">'+dateStr+'</td>' : '')
+        + '</tr>';
+    });
+  });
+  var colTotals = colMap.map(function(){ return 0; });
+  sorted.forEach(function(c){ getCartonItems(c).forEach(function(it){
+    getItemColQtys(it, colMap).forEach(function(q,i){ colTotals[i] += q; });
+  }); });
+  var totalPcs = sorted.reduce(function(s,c){ return s+(c.totalPcs||0); }, 0);
+  html += '<tr style="background:#c6efce;font-weight:700">'
+    + '<td style="'+TDc+'" colspan="5">TOTAL</td>'
+    + colTotals.map(function(q){ return '<td style="'+TDc+'font-weight:700">'+(q||'')+'</td>'; }).join('')
+    + '<td style="'+TDc+'">'+totalPcs+'</td><td></td><td></td><td></td></tr>';
+  html += '</tbody></table>';
+  html += '<div style="margin-top:12px;text-align:right">'
+    + '<button class="btn btn-green" onclick="downloadExcel()" style="font-size:.85rem">⬇️ Download Excel (.xlsx)</button></div>';
+  html += '</div>';
+  return html;
+}
+
+function renderExportPreview(mode) {
   var plId = document.getElementById('export-pl-select') ? document.getElementById('export-pl-select').value : '';
   var el = document.getElementById('export-preview');
   if (!el) return;
   if (!plId) { el.innerHTML = ''; return; }
   var pl = getPL(plId);
   if (!pl) { el.innerHTML = ''; return; }
+  if (mode === 'excel') {
+    if (pl.cartons.length === 0) { el.innerHTML = '<div class="alert alert-yellow" style="margin-top:12px">No cartons yet in this PL.</div>'; return; }
+    el.innerHTML = buildExcelPreviewHTML(pl);
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   if (pl.cartons.length === 0) {
     el.innerHTML = '<div class="alert alert-yellow" style="margin-top:12px">No cartons yet in this PL.</div>';
     return;
@@ -2309,21 +2512,36 @@ function buildPLDoc(pl) {
   var TD = 'border:1px solid #333;padding:1px 2px;font-size:.55rem;vertical-align:middle;background:white;color:#111;white-space:nowrap;';
   var TDB = 'border:1px solid #333;padding:1px 2px;font-size:.55rem;font-weight:800;text-align:center;vertical-align:middle;background:white;color:#111;white-space:nowrap;';
 
+  var _colInfo = getSizeColumnMap(pl);
+  var _colMap = _colInfo.colMap;
+  var _numCols = _colInfo.numCols;
+  var _multiCat = _colInfo.multiCat;
+  var _HR = _multiCat ? 3 : 2;
+  var _fixedTH = function(w,txt){ return '<th rowspan="'+_HR+'" style="'+TH+'width:'+w+'px">'+txt+'</th>'; };
   var thead = '<thead>'
     + '<tr>'
-    + '<th rowspan="2" style="'+TH+'width:55px">容器和封条编号<br><span style="font-size:.5rem">CONTAINER &amp; SEAL NO.</span></th>'
-    + '<th rowspan="2" style="'+TH+'width:26px">箱号<br>BOX NO.</th>'
-    + '<th rowspan="2" style="'+TH+'width:70px">款号<br>STYLE NO.</th>'
-    + '<th rowspan="2" style="'+TH+'width:22px">代码<br>CODE</th>'
-    + '<th rowspan="2" style="'+TH+'width:60px">颜色<br>COLOR</th>'
-    + '<th colspan="'+SIZES.length+'" style="'+TH+'">尺寸<br>SIZE</th>'
-    + '<th rowspan="2" style="'+TH+'width:40px">合计<br>TOTAL (PCS)</th>'
-    + '<th rowspan="2" style="'+TH+'width:26px">箱数<br>CTN</th>'
-    + '<th rowspan="2" style="'+TH+'width:44px">重量<br>WEIGHT (KG)</th>'
-    + '<th rowspan="2" style="'+TH+'width:56px">纸箱规格<br>MEAS(CM)</th>'
-    + '</tr>'
-    + '<tr>' + SIZES.map(function(s){ return '<th style="'+TH+'width:26px;word-break:keep-all">'+s+'</th>'; }).join('') + '</tr>'
-    + '</thead>';
+    + _fixedTH(55,'容器和封条编号<br><span style="font-size:.5rem">CONTAINER &amp; SEAL NO.</span>')
+    + _fixedTH(26,'箱号<br>BOX NO.')
+    + _fixedTH(70,'款号<br>STYLE NO.')
+    + _fixedTH(22,'代码<br>CODE')
+    + _fixedTH(60,'颜色<br>COLOR')
+    + '<th colspan="'+_numCols+'" style="'+TH+'">尺寸<br>SIZE</th>'
+    + _fixedTH(40,'合计<br>TOTAL (PCS)')
+    + _fixedTH(26,'箱数<br>CTN')
+    + _fixedTH(44,'重量<br>WEIGHT (KG)')
+    + _fixedTH(56,'纸箱规格<br>MEAS(CM)')
+    + '</tr>';
+  if (_multiCat) {
+    thead += '<tr>' + _colInfo.row2.map(function(s){ return s
+      ? '<th style="'+TH+'width:26px;word-break:keep-all">'+s+'</th>'
+      : '<th style="'+TH+'background:#eaf4ff;width:26px"></th>'; }).join('') + '</tr>';
+    thead += '<tr>' + _colInfo.row3.map(function(s){ return s
+      ? '<th style="'+TH+'width:26px;word-break:keep-all">'+s+'</th>'
+      : '<th style="'+TH+'background:#eaf4ff;width:26px"></th>'; }).join('') + '</tr>';
+  } else {
+    thead += '<tr>' + _colInfo.row2.map(function(s){ return '<th style="'+TH+'width:26px;word-break:keep-all">'+s+'</th>'; }).join('') + '</tr>';
+  }
+  thead += '</thead>';
 
   var rows = '';
   var firstCarton = true;
@@ -2334,8 +2552,8 @@ function buildPLDoc(pl) {
     var multi = rs > 1;
     var bg = multi ? 'background:#fff3b0;' : '';
     items.forEach(function(it, idx) {
-      var sz = it.sizes || {};
-      var szCells = SIZES.map(function(s){ return '<td style="'+TD+bg+'text-align:center">'+(sz[s]||'&nbsp;')+'</td>'; }).join('');
+      var _qtys = getItemColQtys(it, _colMap);
+      var szCells = _qtys.map(function(q){ return '<td style="'+TD+bg+'text-align:center">'+(q||'&nbsp;')+'</td>'; }).join('');
       if (idx === 0) {
         rows += '<tr style="height:26px">'
           + (firstCarton ? '<td rowspan="'+totalItemRows+'" style="'+TDB+'font-size:.68rem;background:#e8f0fe">'+(pl.container||'')+'</td>' : '')
@@ -2362,7 +2580,11 @@ function buildPLDoc(pl) {
   });
 
   // Total row
-  var szTotalCells = SIZES.map(function(s){ return '<td style="'+TDB+'background:#d0e4f7"></td>'; }).join('');
+  var _colTotals = _colMap.map(function(){ return 0; });
+  sorted.forEach(function(c){ getCartonItems(c).forEach(function(it){
+    getItemColQtys(it, _colMap).forEach(function(q,i){ _colTotals[i] += q; });
+  }); });
+  var szTotalCells = _colTotals.map(function(q){ return '<td style="'+TDB+'background:#d0e4f7;text-align:center">'+(q||'')+'</td>'; }).join('');
   rows += '<tr>'
     + '<td colspan="5" style="'+TDB+'text-align:right;background:#d0e4f7;font-size:.78rem">TOTAL / 总计</td>'
     + szTotalCells
@@ -2637,6 +2859,95 @@ function downloadPDF() {
     + '</body></html>'
 );
   win.document.close();
+}
+
+// ══ DOWNLOAD EXCEL ══
+function downloadExcel() {
+  var plId = document.getElementById('export-pl-select') ? document.getElementById('export-pl-select').value : '';
+  if (!plId) { toast('Select a PL first!'); return; }
+  var pl = getPL(plId);
+  if (!pl) return;
+  if (pl.cartons.length === 0) { toast('No cartons yet in this PL.'); return; }
+  if (typeof XLSX === 'undefined') { toast('Excel library not loaded. Check internet connection.'); return; }
+
+  var sorted = pl.cartons.slice().sort(function(a,b){ return (a._dispIdx||0) - (b._dispIdx||0); });
+  var colInfo = getSizeColumnMap(pl);
+  var colMap = colInfo.colMap;
+  var numCols = colInfo.numCols;
+  var multiCat = colInfo.multiCat;
+  var FC = 5; // fixed cols
+  var TC = 4; // trail cols
+  var _HR_X = multiCat ? 3 : 2;
+
+  var topHeader = ['Box No', 'Ref No', 'Style', 'Color Code', 'Color Name', '尺寸  SIZE'];
+  for (var _i = 1; _i < numCols; _i++) topHeader.push('');
+  topHeader = topHeader.concat(['Total PCS', 'Weight (kg)', 'Measure', 'Date']);
+
+  var wsData = [
+    ['PL Name:', pl.name || '', '', 'Invoice No:', pl.invNo || '', '', 'Destination:', pl.dest || ''],
+    ['Exporter:', (pl.exporter||'').replace(/\n/g,' '), '', 'Consignee:', (pl.consignee||'').replace(/\n/g,' '), '', 'Total Expected:', pl.total || ''],
+    [],
+    topHeader
+  ];
+
+  if (multiCat) {
+    wsData.push(['','','','',''].concat(colInfo.row2).concat(['','','','']));
+    wsData.push(['','','','',''].concat(colInfo.row3).concat(['','','','']));
+  } else {
+    wsData.push(['','','','',''].concat(colInfo.row2).concat(['','','','']));
+  }
+
+  sorted.forEach(function(c) {
+    var items = getCartonItems(c);
+    var boxStr = String(c._dispIdx || c.boxNo || 0).padStart(3, '0');
+    var dateStr = c.ts ? new Date(c.ts).toLocaleDateString('en-GB') : '';
+    items.forEach(function(it, idx) {
+      var qtys = getItemColQtys(it, colMap);
+      wsData.push([
+        idx === 0 ? boxStr : '',
+        idx === 0 ? (c.refNo || '') : '',
+        it.style || '',
+        it.colorCode || '',
+        it.colorName || ''
+      ].concat(qtys).concat([
+        idx === 0 ? (c.totalPcs || 0) : '',
+        idx === 0 ? (c.weight || '') : '',
+        idx === 0 ? (c.measure || '') : '',
+        idx === 0 ? dateStr : ''
+      ]));
+    });
+  });
+
+  // Total row
+  var colTotals = colMap.map(function(){ return 0; });
+  sorted.forEach(function(c){ getCartonItems(c).forEach(function(it){
+    getItemColQtys(it, colMap).forEach(function(q,i){ colTotals[i] += q; });
+  }); });
+  var totalPcs = sorted.reduce(function(s,c){ return s + (c.totalPcs||0); }, 0);
+  wsData.push(['TOTAL','','','',''].concat(colTotals).concat([totalPcs,'','','']));
+
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  var _lastHR = 3 + _HR_X - 1;
+  var merges = [{ s:{r:3,c:FC}, e:{r:3,c:FC+numCols-1} }]; // "尺寸 SIZE" merged
+  for (var _c = 0; _c < FC; _c++) merges.push({ s:{r:3,c:_c}, e:{r:_lastHR,c:_c} });
+  for (var _t = 0; _t < TC; _t++) merges.push({ s:{r:3,c:FC+numCols+_t}, e:{r:_lastHR,c:FC+numCols+_t} });
+  ws['!merges'] = merges;
+
+  var wscols = [{wch:7},{wch:7},{wch:22},{wch:8},{wch:16}]
+    .concat(colMap.map(function(col){
+      var s = col.adult || col.kids || col.baby || '';
+      return {wch: s.length > 4 ? s.length+1 : 6};
+    }))
+    .concat([{wch:9},{wch:10},{wch:14},{wch:12}]);
+  ws['!cols'] = wscols;
+
+  XLSX.utils.book_append_sheet(wb, ws, pl.name ? pl.name.slice(0,30) : 'PL');
+
+  var dateStr2 = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, (pl.name||'PL') + '_' + dateStr2 + '.xlsx');
+  toast('Excel downloaded!');
 }
 
 function saveUsersLocal() {
