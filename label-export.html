@@ -441,8 +441,9 @@ create table if not exists app_users (id text primary key, name text, username t
 alter table app_users disable row level security;
 create table if not exists cartons (id text primary key, carton_id text, pl_id text, pl_name text, box_no int, ref_no text, style text, color_code text, color_name text, size_xs int default 0, size_s int default 0, size_m int default 0, size_l int default 0, size_xl int default 0, size_2xl int default 0, size_3xl int default 0, size_4xl int default 0, size_5xl int default 0, size_6xl int default 0, pcs int default 0, weight text, measure text, ts timestamptz, created_by text, verified_by text);
 alter table cartons disable row level security;
-create table if not exists deleted_pls (id text primary key);
+create table if not exists deleted_pls (id text primary key, pl_name text, pl_data jsonb, deleted_at timestamptz default now());
 alter table deleted_pls disable row level security;
+-- If table already exists, run: alter table deleted_pls add column if not exists pl_name text; alter table deleted_pls add column if not exists pl_data jsonb; alter table deleted_pls add column if not exists deleted_at timestamptz default now();
 create table if not exists deleted_cartons (id text primary key);
 alter table deleted_cartons disable row level security;</code>
       3. Go to <b>Settings → API</b> → copy <b>Project URL</b> dan <b>anon public</b> key
@@ -495,6 +496,9 @@ alter table deleted_cartons disable row level security;</code>
     </button>
     <button class="s-btn" data-page="users" onclick="go('users')" id="sidebar-users-btn" style="display:none">
       <span class="s-icon">👥</span>Users <span id="pending-badge" style="background:#f85149;color:#fff;font-size:.65rem;padding:1px 6px;border-radius:999px;margin-left:4px;display:none">0</span>
+    </button>
+    <button class="s-btn" data-page="recycle" onclick="go('recycle')">
+      <span class="s-icon">🗑️</span>Recycle Bin
     </button>
   </nav>
   <div class="sidebar-footer">
@@ -631,6 +635,13 @@ alter table deleted_cartons disable row level security;</code>
 </div>
 
 <!-- ════ PAGE: USERS ════ -->
+<div class="page" id="page-recycle">
+  <div class="card">
+    <div class="card-title">🗑️ Recycle Bin <span style="font-size:.72rem;font-weight:400;color:var(--text-muted)">(disimpan 30 hari)</span></div>
+    <div id="recycle-list"><div style="text-align:center;color:var(--text-muted);padding:30px">Loading...</div></div>
+  </div>
+</div>
+
 <div class="page" id="page-users">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
     <div>
@@ -1304,7 +1315,7 @@ function go(page) {
   var sbtn = document.querySelector('.s-btn[data-page="' + page + '"]');
   if (sbtn) sbtn.classList.add('active');
   setMobNav(page);
-  var titles = {pl:'Packing Lists', dash:'Dashboard', export:'Export PL', scan:'Loading Verify', users:'User Management'};
+  var titles = {pl:'Packing Lists', dash:'Dashboard', export:'Export PL', scan:'Loading Verify', users:'User Management', recycle:'Recycle Bin'};
   if (page === 'users') {
     if (SB_URL && SB_KEY) { loadUsersFromSupabase(function() { renderUsersPage(); }); }
     else { renderUsersPage(); }
@@ -1317,6 +1328,7 @@ function go(page) {
   if (page === 'dash') renderDash();
   if (page === 'export') { renderExportSelect(); renderExportPreview(); }
   if (page === 'scan') { initScanPage(); setScanMode(scanMode); }
+  if (page === 'recycle') { renderRecycleBin(); }
 }
 
 function setMobNav(page) {
@@ -1410,19 +1422,117 @@ function savePL() {
 function deletePL(id) {
   const pl = getPL(id);
   if (!confirm(`Delete PL "${pl?.name}"? All cartons in this PL will be removed.`)) return;
+  // Save full PL data to recycle bin BEFORE deleting
+  if (SB_URL && SB_KEY && pl) {
+    var rbPayload = [{ id: id, pl_name: pl.name || id, pl_data: pl, deleted_at: new Date().toISOString() }];
+    fetch(SB_URL + '/rest/v1/deleted_pls', {
+      method: 'POST',
+      headers: Object.assign({}, sbHeaders(), { 'Prefer': 'resolution=merge-duplicates' }),
+      body: JSON.stringify(rbPayload)
+    }).catch(function(){});
+  }
   pls = pls.filter(p => p.id !== id);
   if (selectedPLId === id) { selectedPLId = null; }
   if (deletedPLIds.indexOf(id) === -1) { deletedPLIds.push(id); saveDeletedPLIds(); }
   save(); renderAll();
-  toast('🗑️ PL deleted.');
-  // Immediately delete from Supabase + record in deleted_pls table so ALL devices know
+  toast('🗑️ PL dipindahkan ke Recycle Bin.');
+  // Hard delete from packing_lists + cartons
   if (SB_URL && SB_KEY) {
     var ah = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
     fetch(SB_URL + '/rest/v1/packing_lists?id=eq.' + id, { method: 'DELETE', headers: ah }).catch(function(){});
     fetch(SB_URL + '/rest/v1/cartons?pl_id=eq.' + id, { method: 'DELETE', headers: ah }).catch(function(){});
-    // Write to deleted_pls so other devices pick it up on their next sync
-    fetch(SB_URL + '/rest/v1/deleted_pls', { method: 'POST', headers: sbHeaders(), body: JSON.stringify([{ id: id }]) }).catch(function(){});
   }
+}
+
+// ══ RECYCLE BIN ══
+function renderRecycleBin() {
+  var el = document.getElementById('recycle-list');
+  if (!el) return;
+  if (!SB_URL || !SB_KEY) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px">Sila connect Supabase untuk guna Recycle Bin.</div>';
+    return;
+  }
+  el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:30px">Loading...</div>';
+  // Auto-purge entries older than 30 days
+  var cutoff = new Date(Date.now() - 30*24*60*60*1000).toISOString();
+  fetch(SB_URL + '/rest/v1/deleted_pls?deleted_at=lt.' + cutoff, { method: 'DELETE', headers: Object.assign({}, sbHeaders(), {'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}) }).catch(function(){});
+  // Fetch remaining
+  fetch(SB_URL + '/rest/v1/deleted_pls?select=id,pl_name,deleted_at&order=deleted_at.desc', { headers: sbHeaders() })
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      if (!rows || rows.length === 0) {
+        el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px"><div style="font-size:2rem;margin-bottom:8px">🗑️</div>Recycle Bin kosong.</div>';
+        return;
+      }
+      var html = '<table style="width:100%;border-collapse:collapse;font-size:.84rem">'
+        + '<thead><tr style="border-bottom:1px solid var(--border)">'
+        + '<th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:700">PL NAME</th>'
+        + '<th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:700">DELETED</th>'
+        + '<th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-weight:700">EXPIRES</th>'
+        + '<th style="padding:8px 12px"></th>'
+        + '</tr></thead><tbody>';
+      rows.forEach(function(row) {
+        var delDate = row.deleted_at ? new Date(row.deleted_at) : null;
+        var expDate = delDate ? new Date(delDate.getTime() + 30*24*60*60*1000) : null;
+        var delStr = delDate ? delDate.toLocaleDateString('ms-MY') : '-';
+        var expStr = expDate ? expDate.toLocaleDateString('ms-MY') : '-';
+        var daysLeft = expDate ? Math.max(0, Math.ceil((expDate - Date.now()) / 86400000)) : '-';
+        html += '<tr style="border-bottom:1px solid var(--border)">'
+          + '<td style="padding:10px 12px;font-weight:700">' + (row.pl_name || row.id) + '</td>'
+          + '<td style="padding:10px 12px;color:var(--text-muted)">' + delStr + '</td>'
+          + '<td style="padding:10px 12px;color:' + (daysLeft <= 5 ? 'var(--red)' : 'var(--text-muted)') + '">' + expStr + ' (' + daysLeft + ' hari lagi)</td>'
+          + '<td style="padding:10px 12px;text-align:right">'
+          + '<button class="btn" style="font-size:.78rem;padding:5px 12px;margin-right:6px" onclick="restorePL(\'' + row.id + '\')">♻️ Restore</button>'
+          + '<button class="btn btn-red" style="font-size:.78rem;padding:5px 12px" onclick="permanentDeletePL(\'' + row.id + '\')">🗑️ Padam Kekal</button>'
+          + '</td></tr>';
+      });
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    })
+    .catch(function(e) {
+      el.innerHTML = '<div style="color:var(--red);padding:20px">Error: ' + e.message + '</div>';
+    });
+}
+
+function restorePL(id) {
+  if (!confirm('Restore PL ni semula?')) return;
+  if (!SB_URL || !SB_KEY) return;
+  var ah = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+  // Fetch full pl_data from deleted_pls
+  fetch(SB_URL + '/rest/v1/deleted_pls?id=eq.' + id + '&select=pl_data', { headers: ah })
+    .then(function(r){ return r.json(); })
+    .then(function(rows) {
+      if (!rows || !rows[0] || !rows[0].pl_data) { toast('❌ Data PL tidak jumpa.'); return; }
+      var plData = rows[0].pl_data;
+      // Restore to packing_lists
+      fetch(SB_URL + '/rest/v1/packing_lists', {
+        method: 'POST',
+        headers: Object.assign({}, ah, { 'Prefer': 'resolution=merge-duplicates' }),
+        body: JSON.stringify([{ id: plData.id, name: plData.name, status: plData.status || 'active', total_boxes: plData.total || 0, carton_count: (plData.cartons||[]).length, data: plData, updated_at: new Date().toISOString() }])
+      })
+      .then(function() {
+        // Remove from deleted_pls
+        fetch(SB_URL + '/rest/v1/deleted_pls?id=eq.' + id, { method: 'DELETE', headers: ah }).catch(function(){});
+        // Remove from local deletedPLIds
+        deletedPLIds = deletedPLIds.filter(function(x){ return x !== id; });
+        saveDeletedPLIds();
+        // Add back to local pls
+        pls.push(plData);
+        save(); renderAll();
+        toast('✅ PL berjaya di-restore!');
+        renderRecycleBin();
+      });
+    })
+    .catch(function(e){ toast('❌ Gagal restore: ' + e.message); });
+}
+
+function permanentDeletePL(id) {
+  if (!confirm('Padam kekal? Data tidak boleh dipulihkan lagi.')) return;
+  if (!SB_URL || !SB_KEY) return;
+  var ah = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+  fetch(SB_URL + '/rest/v1/deleted_pls?id=eq.' + id, { method: 'DELETE', headers: ah })
+    .then(function(){ toast('🗑️ PL dipadam kekal.'); renderRecycleBin(); })
+    .catch(function(e){ toast('❌ Error: ' + e.message); });
 }
 
 // ══ RENDER PL LIST ══
