@@ -1444,6 +1444,22 @@ function deletePL(id) {
   }
 }
 
+// ══ REINDEX CARTONS ══
+function reindexCartons(plId) {
+  var pl = getPL(plId); if (!pl) return;
+  if (!confirm('Reindex semua box number dalam PL ni? Box number akan disusun semula mengikut tarikh & box no asal.')) return;
+  // Sort by ts (date), then by original boxNo
+  var sorted = pl.cartons.slice().sort(function(a, b) {
+    var ad = localDate(a.ts), bd = localDate(b.ts);
+    if (ad !== bd) return ad.localeCompare(bd);
+    return (a.boxNo||0) - (b.boxNo||0);
+  });
+  sorted.forEach(function(c, i) { c._dispIdx = i + 1; });
+  save();
+  toast('✅ Box numbers dah reindex (' + sorted.length + ' cartons)');
+  openCartonList(plId);
+}
+
 // ══ RECYCLE BIN ══
 function renderRecycleBin() {
   var el = document.getElementById('recycle-list');
@@ -1734,6 +1750,7 @@ function openCartonList(plId) {
     + '<button class="btn btn-grey" onclick="openPrintRange(\'' + plId + '\')">🖨️ Print Range</button>'
     + '<button class="btn btn-green" onclick="openAddCarton(\'' + plId + '\')">+ Add Carton</button>'
     + '<button class="btn" style="background:#25D366;color:#fff;border-color:#25D366" onclick="shareToWhatsApp(\'' + plId + '\')">&#128242; Share</button>'
+    + '<button class="btn btn-grey" style="font-size:.72rem" onclick="reindexCartons(\'' + plId + '\')" title="Fix box numbering">🔢 Reindex</button>'
     + '</div></div>'
     + '<div class="card" style="padding:0;overflow:hidden">'
     + '<div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 210px)">'
