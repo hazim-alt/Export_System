@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ms">
 <head>
@@ -691,6 +690,7 @@ const SIZE_SETS = {
   'baby':  ['12M-18M','18M-24M']
 };
 const SIZES = SIZE_SETS['adult']; // backward compat (CSV/PL export fallback)
+const ALL_SIZES = SIZE_SETS.adult.concat(SIZE_SETS.kids).concat(SIZE_SETS.baby); // all size keys across sets
 function getSizeList(sizeSet) { return SIZE_SETS[sizeSet] || SIZE_SETS['adult']; }
 function detectSizeSet(sizes) {
   if (!sizes) return 'adult';
@@ -2296,7 +2296,7 @@ function cartonLabelFields(pl, c) {
   var _flatSizes = [], _flatPcs = [];
   items.forEach(function(it) {
     var sz = it.sizes || {};
-    SIZES.forEach(function(s) { if (sz[s] > 0) { _flatSizes.push(s); _flatPcs.push(sz[s]); } });
+    ALL_SIZES.forEach(function(s) { if (sz[s] > 0) { _flatSizes.push(s); _flatPcs.push(sz[s]); } });
   });
   var perItemSizes = [_flatSizes.join(' / ') || '—'];
   function uniq(arr) { return arr.filter(function(v,i,a){ return v && a.indexOf(v) === i; }); }
@@ -2365,7 +2365,7 @@ function dashCartonRow(c, displayIdx) {
   var _allSizes = [], _allPcs = [];
   items.forEach(function(it) {
     var sz = it.sizes || {};
-    SIZES.forEach(function(s) { if (sz[s] > 0) { _allSizes.push(s); _allPcs.push(sz[s]); } });
+    ALL_SIZES.forEach(function(s) { if (sz[s] > 0) { _allSizes.push(s); _allPcs.push(sz[s]); } });
   });
   var sizeStr = _allSizes.length ? _allSizes.join(' / ') : '—';
   var pcsStr = _allPcs.length ? _allPcs.join(' / ') : '—';
@@ -2392,7 +2392,7 @@ function dashCartonCard(c, displayIdx) {
   var _allSizes = [], _allPcs = [];
   items.forEach(function(it){
     var sz = it.sizes||{};
-    SIZES.forEach(function(s){ if(sz[s]>0){ _allSizes.push(s); _allPcs.push(sz[s]); } });
+    ALL_SIZES.forEach(function(s){ if(sz[s]>0){ _allSizes.push(s); _allPcs.push(sz[s]); } });
   });
   var sizeStr = _allSizes.length ? _allSizes.map(function(s,i){ return s+':'+_allPcs[i]; }).join(' ') : '—';
   var ts = c.ts ? new Date(c.ts).toLocaleString('en-GB',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}) : '';
