@@ -12,7 +12,8 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK licenses
+        run: yes | sudo $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
       - name: Install ImageMagick
         run: sudo apt-get install -y imagemagick
       - name: Generate launcher icons
